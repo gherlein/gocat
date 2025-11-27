@@ -34,15 +34,15 @@ func main() {
 	}
 
 	fmt.Printf("Found %d YardStick One device(s):\n", len(devices))
+	fmt.Println()
 
 	for i, device := range devices {
 		defer device.Close()
 
 		if *verbose {
-			fmt.Printf("\nDevice %d:\n", i+1)
+			fmt.Printf("Device #%d:\n", i)
 			fmt.Printf("  Serial:       %s\n", device.Serial)
-			fmt.Printf("  Bus:          %d\n", device.Bus)
-			fmt.Printf("  Address:      %d\n", device.Address)
+			fmt.Printf("  Bus:Address:  %d:%d\n", device.Bus, device.Address)
 			fmt.Printf("  Manufacturer: %s\n", device.Manufacturer)
 			fmt.Printf("  Product:      %s\n", device.Product)
 
@@ -66,8 +66,17 @@ func main() {
 				}
 				fmt.Printf("  Chip:         %s (0x%02X)\n", chipName, partNum)
 			}
+			fmt.Println()
 		} else {
-			fmt.Printf("  %s (Bus %d, Addr %d)\n", device.Serial, device.Bus, device.Address)
+			fmt.Printf("  #%d  %s  %d:%d\n", i, device.Serial, device.Bus, device.Address)
 		}
+	}
+
+	if !*verbose {
+		fmt.Println()
+		fmt.Println("Use -d flag with other tools to select device:")
+		fmt.Println("  -d \"#0\"      Select by index")
+		fmt.Println("  -d \"1:10\"    Select by bus:address")
+		fmt.Println("  -d \"009a\"    Select by serial (if unique)")
 	}
 }

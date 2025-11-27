@@ -19,7 +19,7 @@ import (
 func main() {
 	// Parse command line flags
 	outputFile := flag.String("o", "", "Output file path (default: etc/yardsticks/<serial>.json)")
-	serial := flag.String("s", "", "Device serial number (optional, uses first device if not specified)")
+	deviceSel := flag.String("d", "", yardstick.DeviceFlagUsage())
 	verbose := flag.Bool("v", false, "Verbose output")
 	listOnly := flag.Bool("l", false, "List devices only, don't dump config")
 	jsonOutput := flag.Bool("json", false, "Output config to stdout as JSON instead of file")
@@ -34,31 +34,11 @@ func main() {
 		return
 	}
 
-	// Find or open specific device
-	var device *yardstick.Device
-	var err error
-
-	if *serial != "" {
-		device, err = yardstick.OpenDevice(context, *serial)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Failed to open device with serial %s: %v\n", *serial, err)
-			os.Exit(1)
-		}
-	} else {
-		devices, err := yardstick.FindAllDevices(context)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Failed to enumerate devices: %v\n", err)
-			os.Exit(1)
-		}
-		if len(devices) == 0 {
-			fmt.Fprintln(os.Stderr, "Error: No YardStick One devices found")
-			os.Exit(1)
-		}
-		device = devices[0]
-		// Close other devices
-		for i := 1; i < len(devices); i++ {
-			devices[i].Close()
-		}
+	// Select device
+	device, err := yardstick.SelectDevice(context, yardstick.DeviceSelector(*deviceSel))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 	defer device.Close()
 
