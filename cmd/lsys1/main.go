@@ -41,6 +41,8 @@ func main() {
 		if *verbose {
 			fmt.Printf("\nDevice %d:\n", i+1)
 			fmt.Printf("  Serial:       %s\n", device.Serial)
+			fmt.Printf("  Bus:          %d\n", device.Bus)
+			fmt.Printf("  Address:      %d\n", device.Address)
 			fmt.Printf("  Manufacturer: %s\n", device.Manufacturer)
 			fmt.Printf("  Product:      %s\n", device.Product)
 
@@ -65,7 +67,7 @@ func main() {
 				fmt.Printf("  Chip:         %s (0x%02X)\n", chipName, partNum)
 			}
 		} else {
-			fmt.Printf("  %s\n", device.Serial)
+			fmt.Printf("  %s (Bus %d, Addr %d)\n", device.Serial, device.Bus, device.Address)
 		}
 	}
 }

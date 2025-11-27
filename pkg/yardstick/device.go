@@ -19,6 +19,8 @@ type Device struct {
 	Serial       string
 	Manufacturer string
 	Product      string
+	Bus          int
+	Address      int
 	recvBuf      []byte
 	recvMu       sync.Mutex
 }
@@ -104,6 +106,7 @@ func wrapDevice(usbDev *gousb.Device) (*Device, error) {
 		return nil, fmt.Errorf("failed to get OUT endpoint: %w", err)
 	}
 
+	desc := usbDev.Desc
 	return &Device{
 		usbDevice:    usbDev,
 		usbConfig:    config,
@@ -113,6 +116,8 @@ func wrapDevice(usbDev *gousb.Device) (*Device, error) {
 		Serial:       serial,
 		Manufacturer: manufacturer,
 		Product:      product,
+		Bus:          desc.Bus,
+		Address:      desc.Address,
 		recvBuf:      make([]byte, 0, EP5OutBufferSize),
 	}, nil
 }
