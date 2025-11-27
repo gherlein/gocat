@@ -1,8 +1,10 @@
 package yardstick
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -107,7 +109,7 @@ func wrapDevice(usbDev *gousb.Device) (*Device, error) {
 	}
 
 	desc := usbDev.Desc
-	return &Device{
+	device := &Device{
 		usbDevice:    usbDev,
 		usbConfig:    config,
 		usbInterface: iface,
@@ -119,7 +121,12 @@ func wrapDevice(usbDev *gousb.Device) (*Device, error) {
 		Bus:          desc.Bus,
 		Address:      desc.Address,
 		recvBuf:      make([]byte, 0, EP5OutBufferSize),
-	}, nil
+	}
+
+	// Drain any stale data from the receive endpoint
+	device.drainReceiveBuffer()
+
+	return device, nil
 }
 
 // Control performs a USB control transfer (for EP0 vendor commands)
@@ -129,6 +136,12 @@ func (d *Device) Control(requestType uint8, request uint8, value uint16, index u
 
 // Close closes the device and releases all resources
 func (d *Device) Close() error {
+	// Try to put radio back to IDLE state before closing
+	// This ensures the device is in a known state for next use
+	if d.epOut != nil {
+		d.setRadioIDLE()
+	}
+
 	if d.usbInterface != nil {
 		d.usbInterface.Close()
 	}
@@ -139,6 +152,43 @@ func (d *Device) Close() error {
 		return d.usbDevice.Close()
 	}
 	return nil
+}
+
+// drainReceiveBuffer reads and discards any stale data from the receive endpoint
+// This is called on device open to clear any data left from previous sessions
+func (d *Device) drainReceiveBuffer() {
+	buf := make([]byte, 512)
+	// Do a few quick reads with very short timeout to clear any pending data
+	for i := 0; i < 5; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		n, err := d.epIn.ReadContext(ctx, buf)
+		cancel()
+		if err != nil || n == 0 {
+			break // No more data or error, we're done
+		}
+	}
+	// Clear internal buffer as well
+	d.recvBuf = d.recvBuf[:0]
+}
+
+// setRadioIDLE puts the radio into IDLE state using direct register poke
+// This is a simplified version that doesn't wait for response, used during cleanup
+func (d *Device) setRadioIDLE() {
+	// Build POKE command for RFST register (0xDFE1) with SIDLE value (0x04)
+	payload := make([]byte, 3)
+	binary.LittleEndian.PutUint16(payload[0:2], 0xDFE1) // RFST register address
+	payload[2] = 0x04                                   // SIDLE strobe
+
+	packet := make([]byte, 4+len(payload))
+	packet[0] = AppSystem
+	packet[1] = SysCmdPoke
+	binary.LittleEndian.PutUint16(packet[2:4], uint16(len(payload)))
+	copy(packet[4:], payload)
+
+	// Send without waiting for response (best effort during cleanup)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	d.epOut.WriteContext(ctx, packet)
 }
 
 // String returns a human-readable description of the device
@@ -186,16 +236,46 @@ func (d *Device) Recv(expectedApp uint8, expectedCmd uint8, timeout time.Duratio
 	}
 
 	deadline := time.Now().Add(timeout)
-	buf := make([]byte, EP5MaxPacketSize)
+	buf := make([]byte, 512) // Match Python's buffer size
 
 	for {
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("timeout waiting for response")
 		}
 
-		// Read from EP5
-		n, err := d.epIn.Read(buf)
+		// First check if we already have a complete response buffered
+		response, remaining, err := d.parseResponse(expectedApp, expectedCmd)
+		if err == nil {
+			d.recvBuf = remaining
+			return response, nil
+		}
+
+		// Calculate remaining time for this read operation
+		remaining_time := time.Until(deadline)
+		if remaining_time <= 0 {
+			return nil, fmt.Errorf("timeout waiting for response")
+		}
+
+		// Use a shorter read timeout (100ms) to allow periodic deadline checks
+		readTimeout := 100 * time.Millisecond
+		if remaining_time < readTimeout {
+			readTimeout = remaining_time
+		}
+
+		// Read from EP5 with context timeout
+		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+		n, err := d.epIn.ReadContext(ctx, buf)
+		cancel()
+
 		if err != nil {
+			// Check if it's a timeout/canceled error (normal, just retry)
+			errStr := strings.ToLower(err.Error())
+			if strings.Contains(errStr, "timeout") ||
+				strings.Contains(errStr, "timed out") ||
+				strings.Contains(errStr, "canceled") ||
+				strings.Contains(errStr, "context") {
+				continue
+			}
 			return nil, fmt.Errorf("failed to read from EP5: %w", err)
 		}
 
@@ -205,17 +285,6 @@ func (d *Device) Recv(expectedApp uint8, expectedCmd uint8, timeout time.Duratio
 
 		// Append to receive buffer
 		d.recvBuf = append(d.recvBuf, buf[:n]...)
-
-		// Try to parse a complete response
-		response, remaining, err := d.parseResponse(expectedApp, expectedCmd)
-		if err != nil {
-			// Not enough data yet, continue reading
-			continue
-		}
-
-		// Save remaining data for next read
-		d.recvBuf = remaining
-		return response, nil
 	}
 }
 
