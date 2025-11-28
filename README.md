@@ -1,28 +1,36 @@
 # gocat
 
-A Go library and tools for controlling the [YardStick One](https://greatscottgadgets.com/yardstickone/) (YS1) sub-GHz RF transceiver, inspired by and compatible with [RFCat](https://github.com/atlas0fd00m/rfcat).
+> **⚠️ EXPERIMENTAL** - This project is in early development with minimal testing beyond the included examples. The API will change. Use at your own risk. Pull requests welcome!
+
+A Go library for controlling the [YardStick One](https://greatscottgadgets.com/yardstickone/) (YS1) sub-GHz RF transceiver, designed for building production RF tools and applications.
 
 ## Overview
 
-gocat provides native Go access to YardStick One hardware for RF research, testing, and development. It communicates with the same CC1111-based firmware as RFCat, allowing Go applications to transmit and receive on frequencies from 300-928 MHz.
+gocat provides a native Go module for YardStick One hardware, enabling developers to build robust, deployable RF applications. It communicates with the CC1111-based RFCat firmware, allowing Go applications to transmit and receive on frequencies from 300-928 MHz.
 
-### Why Go?
+### Goals
 
-- **Performance**: Native compilation, no Python interpreter overhead
-- **Concurrency**: Goroutines for efficient async TX/RX operations
-- **Deployment**: Single binary deployment, no dependency management
-- **Integration**: Easy embedding in Go-based security tools and infrastructure
+1. **Production-ready Go module**: A clean, well-tested library for embedding YS1 control in Go applications—security tools, IoT gateways, RF monitoring systems, automation infrastructure
+2. **Single-binary deployment**: No Python runtime, no pip dependencies, no virtualenvs—just compile and run
+3. **Concurrent by design**: Leverage Go's goroutines for efficient async TX/RX, multi-device coordination, and real-time packet processing
+
+### Why Go over Python?
+
+- **Deployment**: Ship a single static binary vs. managing Python environments
+- **Performance**: Native compilation, no interpreter overhead for time-sensitive RF operations
+- **Concurrency**: First-class goroutines vs. Python's GIL limitations
+- **Integration**: Easy embedding in existing Go infrastructure (Kubernetes operators, network tools, security platforms)
 
 ## Relationship to RFCat
 
-This project does not replace RFCat—it complements it. The YardStick One runs the same RFCat firmware; gocat is an alternative host-side implementation.
+gocat uses the same CC1111 firmware as [RFCat](https://github.com/atlas0fd00m/rfcat)—we're reimplementing the host-side USB protocol in Go, not the device firmware. RFCat compatibility is useful for validation and testing, but the goal is a standalone Go library, not a Python replacement.
 
 | Component | RFCat | gocat |
 |-----------|-------|-------|
 | Language | Python | Go |
 | Firmware | CC1111 RFCat firmware | Same firmware |
 | USB Protocol | EP5 bulk transfers | Same protocol |
-| Maturity | Production-ready | Experimental |
+| Goal | Interactive RF research | Embedded production tools |
 
 gocat was developed by analyzing RFCat's source code and the CC1111 firmware to understand:
 - USB command/response protocol format
@@ -137,10 +145,15 @@ Key settings:
 
 ## Library Usage
 
+The `pkg/yardstick` module is designed for embedding in larger Go applications:
+
 ```go
 package main
 
 import (
+    "log"
+    "time"
+
     "github.com/google/gousb"
     "github.com/herlein/gocat/pkg/yardstick"
     "github.com/herlein/gocat/pkg/config"
@@ -150,25 +163,33 @@ func main() {
     ctx := gousb.NewContext()
     defer ctx.Close()
 
-    // Open first available device
-    device, _ := yardstick.SelectDevice(ctx, "")
+    // Open device by serial, bus:address, or index
+    device, err := yardstick.SelectDevice(ctx, "")
+    if err != nil {
+        log.Fatal(err)
+    }
     defer device.Close()
 
     // Load and apply configuration
     cfg, _ := config.LoadFromFile("etc/defaults.json")
     config.ApplyToDevice(device, cfg)
 
-    // Enable amplifiers
+    // Enable YS1 front-end amplifiers
     device.SetAmpMode(1)
 
     // Receive packets
     device.SetModeRX()
-    data, _ := device.RFRecv(time.Second, 0)
+    data, err := device.RFRecv(time.Second, 0)
+    if err == nil {
+        log.Printf("Received %d bytes: %x", len(data), data)
+    }
 
     // Transmit packets
     device.RFXmit([]byte("Hello RF!"), 0, 0)
 }
 ```
+
+For multi-device scenarios (e.g., relay, monitoring), open multiple devices by serial number or bus:address and coordinate with goroutines.
 
 ## Project Structure
 
@@ -192,24 +213,28 @@ gocat/
 └── Makefile
 ```
 
-## Current Limitations
+## Current Status
 
-- **Experimental**: Not yet production-ready
-- **Linux only**: Tested on Linux; macOS/Windows untested
-- **Basic features**: Advanced RFCat features (hopping, AES, etc.) not yet implemented
-- **Fixed-length packets**: Variable-length mode needs more testing
+**This is experimental software.** It has only been tested with the included example programs (`send-recv`, `test-10-repeat`) on a single Linux machine with two YS1 devices. There are no unit tests, no CI, and the API is not stable.
 
-## Contributing
+- **Early development**: Core TX/RX works in basic scenarios
+- **Minimal testing**: Only self-test examples, no production validation
+- **Linux only**: Untested on macOS/Windows
+- **Fixed-length packets only**: Variable-length mode not working
+- **No advanced features**: Frequency hopping, AES encryption not implemented
 
-Contributions welcome! Areas needing work:
+## Roadmap
 
+Priorities for production readiness:
+
+- [ ] Comprehensive test coverage
+- [ ] API documentation and examples
 - [ ] Variable-length packet mode
-- [ ] CRC enable/disable testing
+- [ ] Robust error handling and recovery
+- [ ] macOS/Windows support
+- [ ] Performance benchmarking
 - [ ] Frequency hopping support
 - [ ] AES encryption support
-- [ ] macOS/Windows testing
-- [ ] Performance optimization
-- [ ] More comprehensive tests
 
 ## References
 
@@ -224,6 +249,6 @@ MIT License - See LICENSE file for details.
 
 ## Acknowledgments
 
-- **atlas0fd00m** and RFCat contributors for the original implementation and firmware
+- **atlas0fd00m** and RFCat contributors for the CC1111 firmware and protocol reference
 - **Great Scott Gadgets** for the YardStick One hardware
-- **Anthropic** for Claude, which assisted in analyzing RFCat and developing this implementation
+- **Anthropic** for Claude, which assisted in reverse-engineering the protocol and developing this implementation
