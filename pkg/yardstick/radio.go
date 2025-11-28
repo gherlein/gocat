@@ -23,17 +23,25 @@ const (
 )
 
 // SetModeRX puts the radio into receive mode
-// This sets MCSM1 to stay in RX after receiving and issues the SRX strobe
+// This issues the SYS_CMD_RFMODE command which calls firmware RxMode()
 func (d *Device) SetModeRX() error {
-	// Set MCSM1: CCA_MODE=00, RXOFF_MODE=11 (stay RX), TXOFF_MODE=11 (go RX)
-	if err := d.PokeByte(RegMCSM1, 0x0F); err != nil {
-		return fmt.Errorf("failed to set MCSM1: %w", err)
-	}
-
-	// Issue RFMODE command to enter RX
+	// Issue RFMODE command to enter RX - firmware handles MCSM1 and strobe
 	_, err := d.Send(AppSystem, SysCmdRFMode, []byte{RFSTSrx}, USBDefaultTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to set RX mode: %w", err)
+	}
+
+	// Wait briefly for radio to transition to RX state
+	time.Sleep(10 * time.Millisecond)
+
+	// Verify we're in RX mode
+	state, err := d.GetMARCSTATE()
+	if err != nil {
+		return fmt.Errorf("failed to verify RX mode: %w", err)
+	}
+
+	if state != MarcStateRX {
+		return fmt.Errorf("radio not in RX mode: MARCSTATE=0x%02X (expected 0x%02X)", state, MarcStateRX)
 	}
 
 	return nil
@@ -42,12 +50,7 @@ func (d *Device) SetModeRX() error {
 // SetModeTX puts the radio into transmit mode
 // Note: Normal transmit is done via RFXmit, not by setting TX mode directly
 func (d *Device) SetModeTX() error {
-	// Set MCSM1: CCA_MODE=00, RXOFF_MODE=10 (go TX), TXOFF_MODE=10 (stay TX)
-	if err := d.PokeByte(RegMCSM1, 0x0A); err != nil {
-		return fmt.Errorf("failed to set MCSM1: %w", err)
-	}
-
-	// Issue RFMODE command to enter TX
+	// Issue RFMODE command to enter TX - firmware handles MCSM1 and strobe
 	_, err := d.Send(AppSystem, SysCmdRFMode, []byte{RFSTStx}, USBDefaultTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to set TX mode: %w", err)
@@ -58,12 +61,7 @@ func (d *Device) SetModeTX() error {
 
 // SetModeIDLE puts the radio into idle mode
 func (d *Device) SetModeIDLE() error {
-	// Set MCSM1: stay in IDLE after RX/TX
-	if err := d.PokeByte(RegMCSM1, 0x00); err != nil {
-		return fmt.Errorf("failed to set MCSM1: %w", err)
-	}
-
-	// Issue RFMODE command to enter IDLE
+	// Issue RFMODE command to enter IDLE - firmware handles the strobe
 	_, err := d.Send(AppSystem, SysCmdRFMode, []byte{RFSTSidle}, USBDefaultTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to set IDLE mode: %w", err)
@@ -307,4 +305,76 @@ func (d *Device) SetRecvLargeMode(blocksize uint16) error {
 		return fmt.Errorf("failed to set receive blocksize: %w", err)
 	}
 	return nil
+}
+
+// GetRSSI returns the current RSSI (Received Signal Strength Indicator) value
+// Returns raw register value; convert to dBm: rssi_dBm = (rssi - 74) for most cases
+func (d *Device) GetRSSI() (uint8, error) {
+	return d.PeekByte(0xDF3A) // RegRSSI
+}
+
+// GetLQI returns the Link Quality Indicator
+// Lower values indicate better link quality
+// Bit 7 (0x80) indicates CRC OK when set
+func (d *Device) GetLQI() (uint8, error) {
+	return d.PeekByte(0xDF39) // RegLQI
+}
+
+// GetPKTSTATUS returns the packet status register
+// Bit 7: CRC_OK, Bit 6: CS (Carrier Sense), Bit 5: PQT_REACHED
+// Bit 4: CCA, Bit 3: SFD, Bit 2: GDO2, Bit 1: reserved, Bit 0: GDO0
+func (d *Device) GetPKTSTATUS() (uint8, error) {
+	return d.PeekByte(0xDF3C) // RegPKTSTATUS
+}
+
+// RSSIToDBm converts raw RSSI register value to dBm
+// The offset depends on data rate, but -74 is typical for many configurations
+func RSSIToDBm(rssi uint8) int {
+	// RSSI is a signed value in 0.5 dBm steps with offset
+	if rssi >= 128 {
+		return int(rssi) - 256 - 74
+	}
+	return int(rssi) - 74
+}
+
+// RadioStatus holds diagnostic information about received packets
+type RadioStatus struct {
+	RSSI      uint8
+	RSSIdBm   int
+	LQI       uint8
+	CRCOk     bool
+	MARCSTATE uint8
+	PKTSTATUS uint8
+}
+
+// GetRadioStatus reads current radio status registers
+func (d *Device) GetRadioStatus() (*RadioStatus, error) {
+	rssi, err := d.GetRSSI()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read RSSI: %w", err)
+	}
+
+	lqi, err := d.GetLQI()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read LQI: %w", err)
+	}
+
+	marcstate, err := d.GetMARCSTATE()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read MARCSTATE: %w", err)
+	}
+
+	pktstatus, err := d.GetPKTSTATUS()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PKTSTATUS: %w", err)
+	}
+
+	return &RadioStatus{
+		RSSI:      rssi,
+		RSSIdBm:   RSSIToDBm(rssi),
+		LQI:       lqi & 0x7F, // Lower 7 bits are LQI
+		CRCOk:     (lqi & 0x80) != 0,
+		MARCSTATE: marcstate,
+		PKTSTATUS: pktstatus,
+	}, nil
 }

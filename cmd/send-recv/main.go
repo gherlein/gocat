@@ -189,12 +189,22 @@ func runRecvMode(device *yardstick.Device, timeout time.Duration, count int, ver
 		os.Exit(1)
 	}
 
+	// Show initial radio status in verbose mode
+	if verbose {
+		status, err := device.GetRadioStatus()
+		if err == nil {
+			fmt.Printf("Initial radio state: MARCSTATE=0x%02X RSSI=%d dBm\n",
+				status.MARCSTATE, status.RSSIdBm)
+		}
+	}
+
 	if !rawOutput {
 		fmt.Println("Listening for packets (Ctrl+C to stop)...")
 		fmt.Println()
 	}
 
 	packetsReceived := 0
+	timeouts := 0
 	startTime := time.Now()
 
 	for {
@@ -202,7 +212,8 @@ func runRecvMode(device *yardstick.Device, timeout time.Duration, count int, ver
 		select {
 		case <-sigChan:
 			if !rawOutput {
-				fmt.Printf("\n\nReceived %d packets in %v\n", packetsReceived, time.Since(startTime).Round(time.Second))
+				fmt.Printf("\n\nReceived %d packets, %d timeouts in %v\n",
+					packetsReceived, timeouts, time.Since(startTime).Round(time.Second))
 			}
 			return
 		default:
@@ -212,23 +223,49 @@ func runRecvMode(device *yardstick.Device, timeout time.Duration, count int, ver
 		data, err := device.RFRecv(timeout, 0)
 		if err != nil {
 			// Timeout is normal, continue
+			timeouts++
+			if verbose && timeouts%10 == 0 {
+				// Periodic status update every 10 timeouts
+				status, serr := device.GetRadioStatus()
+				if serr == nil {
+					fmt.Printf("  [waiting] timeouts=%d MARCSTATE=0x%02X RSSI=%d dBm\n",
+						timeouts, status.MARCSTATE, status.RSSIdBm)
+				}
+			}
 			continue
 		}
 
 		packetsReceived++
 		timestamp := time.Now()
 
+		// Get radio status immediately after receiving
+		status, _ := device.GetRadioStatus()
+
 		if rawOutput {
 			// Raw hex output for piping
 			fmt.Println(hex.EncodeToString(data))
 		} else {
-			// Formatted output
+			// Formatted output with radio diagnostics
 			fmt.Printf("[%s] Packet #%d (%d bytes):\n",
 				timestamp.Format("15:04:05.000"),
 				packetsReceived,
 				len(data))
+
+			if status != nil {
+				crcStr := "NO"
+				if status.CRCOk {
+					crcStr = "OK"
+				}
+				fmt.Printf("  RSSI: %d dBm, LQI: %d, CRC: %s, PKTSTATUS: 0x%02X\n",
+					status.RSSIdBm, status.LQI, crcStr, status.PKTSTATUS)
+			}
+
 			fmt.Printf("  Hex: %s\n", hex.EncodeToString(data))
-			fmt.Printf("  ASCII: %s\n", makePrintable(data))
+			if len(data) <= 64 {
+				fmt.Printf("  ASCII: %s\n", makePrintable(data))
+			} else {
+				fmt.Printf("  ASCII: %s... (truncated)\n", makePrintable(data[:64]))
+			}
 			fmt.Println()
 		}
 
