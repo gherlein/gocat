@@ -277,19 +277,11 @@ func runRecvMode(device *yardstick.Device, timeout time.Duration, count int, ver
 			continue
 		}
 
-		// Get radio status immediately after receiving
-		status, _ := device.GetRadioStatus()
-
-		// Filter out packets with bad CRC (software filter since hardware doesn't always filter)
-		if status != nil && !status.CRCOk {
-			if verbose {
-				fmt.Printf("  [dropped] CRC failed, %d bytes\n", len(data))
-			}
-			continue
-		}
-
 		packetsReceived++
 		timestamp := time.Now()
+
+		// Get radio status immediately after receiving
+		status, _ := device.GetRadioStatus()
 
 		if rawOutput {
 			// Raw hex output for piping
