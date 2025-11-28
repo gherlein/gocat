@@ -116,11 +116,47 @@ func main() {
 	// Apply configuration
 	if *verbose {
 		fmt.Println("Applying radio configuration...")
+		fmt.Println("  Setting IDLE state...")
+	}
+
+	// Force IDLE state first with direct strobe
+	if err := device.PokeByte(0xDFE1, 0x04); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to strobe IDLE: %v\n", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	if *verbose {
+		fmt.Println("  Writing registers...")
 	}
 
 	if err := config.ApplyToDevice(device, configuration); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to apply configuration: %v\n", err)
 		os.Exit(1)
+	}
+
+	if *verbose {
+		fmt.Println("  Configuration applied.")
+	}
+
+	// Enable YS1 front-end amplifiers for better TX power and RX sensitivity
+	if err := device.SetAmpMode(1); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to enable amplifiers: %v\n", err)
+	} else if *verbose {
+		fmt.Println("Amplifiers enabled")
+	}
+
+	// Verify configuration by reading back key registers
+	if *verbose {
+		sync1, _ := device.PeekByte(0xDF00)
+		sync0, _ := device.PeekByte(0xDF01)
+		pktlen, _ := device.PeekByte(0xDF02)
+		mdmcfg2, _ := device.PeekByte(0xDF0E)
+		freq2, _ := device.PeekByte(0xDF09)
+		freq1, _ := device.PeekByte(0xDF0A)
+		freq0, _ := device.PeekByte(0xDF0B)
+		pa0, _ := device.PeekByte(0xDF2E)
+		fmt.Printf("Verified: SYNC=0x%02X%02X PKTLEN=%d MDMCFG2=0x%02X FREQ=0x%02X%02X%02X PA0=0x%02X\n",
+			sync1, sync0, pktlen, mdmcfg2, freq2, freq1, freq0, pa0)
 	}
 
 	// Run appropriate mode
@@ -207,8 +243,14 @@ func runRecvMode(device *yardstick.Device, timeout time.Duration, count int, ver
 	timeouts := 0
 	startTime := time.Now()
 
+	// Use shorter internal timeout for more responsive signal handling
+	recvTimeout := 200 * time.Millisecond
+	if timeout < recvTimeout {
+		recvTimeout = timeout
+	}
+
 	for {
-		// Check for shutdown signal
+		// Check for shutdown signal (non-blocking)
 		select {
 		case <-sigChan:
 			if !rawOutput {
@@ -219,27 +261,35 @@ func runRecvMode(device *yardstick.Device, timeout time.Duration, count int, ver
 		default:
 		}
 
-		// Try to receive a packet
-		data, err := device.RFRecv(timeout, 0)
+		// Try to receive a packet with short timeout for responsive Ctrl+C
+		data, err := device.RFRecv(recvTimeout, 0)
 		if err != nil {
 			// Timeout is normal, continue
 			timeouts++
-			if verbose && timeouts%10 == 0 {
-				// Periodic status update every 10 timeouts
+			if verbose && timeouts%5 == 0 {
+				// Periodic status update every 5 timeouts (1 second)
 				status, serr := device.GetRadioStatus()
 				if serr == nil {
-					fmt.Printf("  [waiting] timeouts=%d MARCSTATE=0x%02X RSSI=%d dBm\n",
-						timeouts, status.MARCSTATE, status.RSSIdBm)
+					fmt.Printf("  [waiting] timeouts=%d MARCSTATE=0x%02X RSSI=%d dBm PKTSTATUS=0x%02X\n",
+						timeouts, status.MARCSTATE, status.RSSIdBm, status.PKTSTATUS)
 				}
+			}
+			continue
+		}
+
+		// Get radio status immediately after receiving
+		status, _ := device.GetRadioStatus()
+
+		// Filter out packets with bad CRC (software filter since hardware doesn't always filter)
+		if status != nil && !status.CRCOk {
+			if verbose {
+				fmt.Printf("  [dropped] CRC failed, %d bytes\n", len(data))
 			}
 			continue
 		}
 
 		packetsReceived++
 		timestamp := time.Now()
-
-		// Get radio status immediately after receiving
-		status, _ := device.GetRadioStatus()
 
 		if rawOutput {
 			// Raw hex output for piping

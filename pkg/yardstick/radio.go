@@ -25,8 +25,16 @@ const (
 // SetModeRX puts the radio into receive mode
 // This issues the SYS_CMD_RFMODE command which calls firmware RxMode()
 func (d *Device) SetModeRX() error {
-	// Issue RFMODE command to enter RX - firmware handles MCSM1 and strobe
-	_, err := d.Send(AppSystem, SysCmdRFMode, []byte{RFSTSrx}, USBDefaultTimeout)
+	// First ensure we're in IDLE state for clean transition
+	// This resets any previous RF state and clears the firmware's rf_status
+	_, err := d.Send(AppSystem, SysCmdRFMode, []byte{RFSTSidle}, USBDefaultTimeout)
+	if err != nil {
+		return fmt.Errorf("failed to set IDLE before RX: %w", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+
+	// Now issue RFMODE command to enter RX - firmware handles MCSM1 and strobe
+	_, err = d.Send(AppSystem, SysCmdRFMode, []byte{RFSTSrx}, USBDefaultTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to set RX mode: %w", err)
 	}
@@ -305,6 +313,30 @@ func (d *Device) SetRecvLargeMode(blocksize uint16) error {
 		return fmt.Errorf("failed to set receive blocksize: %w", err)
 	}
 	return nil
+}
+
+// SetAmpMode enables or disables the YardStick One front-end amplifiers
+// mode: 0 = amplifiers bypassed (lower power/sensitivity)
+//       1 = amplifiers enabled (full power/sensitivity)
+// The YS1 has separate TX and RX amplifiers that significantly improve range
+func (d *Device) SetAmpMode(mode uint8) error {
+	_, err := d.Send(AppNIC, NICSetAmpMode, []byte{mode}, USBDefaultTimeout)
+	if err != nil {
+		return fmt.Errorf("failed to set amplifier mode: %w", err)
+	}
+	return nil
+}
+
+// GetAmpMode returns the current amplifier mode (0=bypassed, 1=enabled)
+func (d *Device) GetAmpMode() (uint8, error) {
+	response, err := d.Send(AppNIC, NICGetAmpMode, nil, USBDefaultTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get amplifier mode: %w", err)
+	}
+	if len(response) < 1 {
+		return 0, fmt.Errorf("empty amplifier mode response")
+	}
+	return response[0], nil
 }
 
 // GetRSSI returns the current RSSI (Received Signal Strength Indicator) value
