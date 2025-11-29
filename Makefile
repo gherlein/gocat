@@ -60,7 +60,7 @@ tests: build
 	@echo "--- 433 MHz Band Tests ---"
 	./bin/profile-test -profile 433-2fsk-std-4.8k -repeat 2
 	./bin/profile-test -profile 433-gfsk-crc-9.6k -repeat 2
-	./bin/profile-test -profile 433-2fsk-fast-38.4k -repeat 2
+	./bin/profile-test -profile 433-2fsk-std-9.6k -repeat 2
 	@echo ""
 	@echo "--- 868 MHz Band Tests ---"
 	./bin/profile-test -profile 868-gfsk-smart-9.6k -repeat 2
