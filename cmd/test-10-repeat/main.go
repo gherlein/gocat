@@ -105,10 +105,15 @@ func main() {
 	// Configure both devices
 	fmt.Println("Configuring devices...")
 
-	// Force IDLE state first
-	sender.PokeByte(0xDFE1, 0x04)
-	receiver.PokeByte(0xDFE1, 0x04)
-	time.Sleep(50 * time.Millisecond)
+	// Force both devices to IDLE state and clear any pending data
+	fmt.Println("  Setting devices to IDLE...")
+	if err := sender.SetModeIDLE(); err != nil {
+		fmt.Printf("  Warning: sender SetModeIDLE failed: %v\n", err)
+	}
+	if err := receiver.SetModeIDLE(); err != nil {
+		fmt.Printf("  Warning: receiver SetModeIDLE failed: %v\n", err)
+	}
+	time.Sleep(100 * time.Millisecond)
 
 	if err := config.ApplyToDevice(sender, configuration); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to configure sender: %v\n", err)
@@ -224,11 +229,14 @@ func runTest(sender, receiver *yardstick.Device, count int, delay time.Duration,
 			return
 		}
 
-		recvTimeout := 200 * time.Millisecond
+		recvTimeout := 100 * time.Millisecond
 		for !stopRecv.Load() {
 			data, err := receiver.RFRecv(recvTimeout, 0)
 			if err != nil {
-				result.RecvTimeouts++
+				// Only count as timeout if we're still supposed to be receiving
+				if !stopRecv.Load() {
+					result.RecvTimeouts++
+				}
 				continue
 			}
 
@@ -252,14 +260,18 @@ func runTest(sender, receiver *yardstick.Device, count int, delay time.Duration,
 	// Send packets
 	sendTimes := make([]time.Time, count)
 	for i := 0; i < count; i++ {
+		fmt.Printf("  TX[%02d/%02d]", i+1, count)
 		if verbose {
-			fmt.Printf("  TX[%02d]: %s\n", i, hex.EncodeToString(packets[i]))
+			fmt.Printf(": %s", hex.EncodeToString(packets[i]))
 		}
+		fmt.Printf("...")
 
 		sendTimes[i] = time.Now()
 		err := sender.RFXmit(packets[i], 0, 0)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  TX[%02d] ERROR: %v\n", i, err)
+			fmt.Printf(" ERROR: %v\n", err)
+		} else {
+			fmt.Printf(" OK (%.0fms)\n", time.Since(sendTimes[i]).Seconds()*1000)
 		}
 
 		if i < count-1 {
@@ -268,11 +280,34 @@ func runTest(sender, receiver *yardstick.Device, count int, delay time.Duration,
 	}
 
 	// Wait for remaining packets to arrive
+	fmt.Printf("  Waiting for RX...")
 	time.Sleep(500 * time.Millisecond)
 
 	// Stop receiver
 	stopRecv.Store(true)
-	recvWg.Wait()
+
+	// Wait for receiver goroutine with timeout
+	done := make(chan struct{})
+	go func() {
+		recvWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Printf(" done\n")
+	case <-time.After(500 * time.Millisecond):
+		fmt.Printf(" timeout, stopping receiver...\n")
+		// Force receiver to IDLE to unblock RFRecv
+		receiver.SetModeIDLE()
+		// Wait again with another timeout
+		select {
+		case <-done:
+			fmt.Printf("  Receiver stopped\n")
+		case <-time.After(500 * time.Millisecond):
+			fmt.Printf("  Warning: receiver goroutine still blocked, continuing anyway\n")
+		}
+	}
 	close(recvChan)
 
 	// Analyze received packets
@@ -339,17 +374,21 @@ func runTest(sender, receiver *yardstick.Device, count int, delay time.Duration,
 
 	result.SuccessRate = float64(result.Matched) / float64(result.Sent) * 100.0
 
+	// Always show RX summary
+	fmt.Printf("  RX: %d packets received, %d matched, %d mismatched\n",
+		result.Received, result.Matched, result.Mismatched)
+
 	// Report missing packets
-	if verbose {
-		missing := []int{}
-		for i := 0; i < count; i++ {
-			if !matched[i] {
-				missing = append(missing, i)
-			}
+	missing := []int{}
+	for i := 0; i < count; i++ {
+		if !matched[i] {
+			missing = append(missing, i)
 		}
-		if len(missing) > 0 {
-			fmt.Printf("  Missing packets: %v\n", missing)
-		}
+	}
+	if len(missing) > 0 && len(missing) <= 10 {
+		fmt.Printf("  Missing packets: %v\n", missing)
+	} else if len(missing) > 10 {
+		fmt.Printf("  Missing packets: %d total\n", len(missing))
 	}
 
 	return result

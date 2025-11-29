@@ -217,9 +217,12 @@ func compareRegisters(expected, actual *registers.RegisterMap) []RegisterCompari
 	return comparisons
 }
 
-// isReadOnlyRegister returns true for registers that cannot be written
+// isReadOnlyRegister returns true for registers that cannot be reliably compared
+// This includes true read-only registers and calibration registers that the
+// CC1111 automatically updates during frequency synthesizer calibration
 func isReadOnlyRegister(name string) bool {
 	readOnlyRegs := map[string]bool{
+		// True read-only status registers
 		"PARTNUM":    true,
 		"CHIPID":     true,
 		"FREQEST":    true,
@@ -228,6 +231,11 @@ func isReadOnlyRegister(name string) bool {
 		"MARCSTATE":  true,
 		"PKTSTATUS":  true,
 		"VCO_VC_DAC": true,
+		// Calibration registers - automatically updated by hardware during FS calibration
+		"FSCAL3": true,
+		"FSCAL2": true,
+		"FSCAL1": true,
+		"FSCAL0": true,
 	}
 	return readOnlyRegs[name]
 }
