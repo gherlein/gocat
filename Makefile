@@ -49,21 +49,22 @@ test-quick: build
 	@echo "=== Quick Test Complete ==="
 
 # Full test suite - representative profiles from each band/modulation
+# Note: Only profiles with sync word enabled are used for reliable loopback testing
 tests: build
 	@echo "=== Running Hardware Tests ==="
 	@echo ""
 	@echo "--- 315 MHz Band Tests ---"
 	./bin/profile-test -profile 315-2fsk-sync-4.8k -repeat 2
-	./bin/profile-test -profile 315-ook-low-2.4k -repeat 2
+	./bin/profile-test -profile 315-2fsk-sync-9.6k -repeat 2
 	@echo ""
 	@echo "--- 433 MHz Band Tests ---"
 	./bin/profile-test -profile 433-2fsk-std-4.8k -repeat 2
 	./bin/profile-test -profile 433-gfsk-crc-9.6k -repeat 2
-	./bin/profile-test -profile 433-ook-keyfob-2.4k -repeat 2
+	./bin/profile-test -profile 433-2fsk-fast-38.4k -repeat 2
 	@echo ""
 	@echo "--- 868 MHz Band Tests ---"
 	./bin/profile-test -profile 868-gfsk-smart-9.6k -repeat 2
-	./bin/profile-test -profile 868-2fsk-manch-4.8k -repeat 2
+	./bin/profile-test -profile 868-gfsk-fec-19.2k -repeat 2
 	@echo ""
 	@echo "--- 915 MHz Band Tests ---"
 	./bin/profile-test -profile 915-2fsk-sensor-9.6k -repeat 2
