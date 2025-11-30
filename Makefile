@@ -53,25 +53,51 @@ test-quick: build
 
 # Full test suite - representative profiles from each band/modulation
 # Note: Only profiles with sync word enabled are used for reliable loopback testing
+# Tests run twice with swapped device roles to ensure both devices work as TX and RX
 tests: build
 	@echo "=== Running Hardware Tests ==="
 	@echo ""
+	@echo "=========================================="
+	@echo "=== PASS 1: Device #0=TX, Device #1=RX ==="
+	@echo "=========================================="
+	@echo ""
 	@echo "--- 315 MHz Band Tests ---"
-	./bin/profile-test -profile 315-2fsk-sync-4.8k -repeat 2
-	./bin/profile-test -profile 315-2fsk-sync-9.6k -repeat 2
+	./bin/profile-test -profile 315-2fsk-sync-4.8k -repeat 2 -tx "#0" -rx "#1"
+	./bin/profile-test -profile 315-2fsk-sync-9.6k -repeat 2 -tx "#0" -rx "#1"
 	@echo ""
 	@echo "--- 433 MHz Band Tests ---"
-	./bin/profile-test -profile 433-2fsk-std-4.8k -repeat 2
-	./bin/profile-test -profile 433-gfsk-crc-9.6k -repeat 2
-	./bin/profile-test -profile 433-2fsk-std-9.6k -repeat 2
+	./bin/profile-test -profile 433-2fsk-std-4.8k -repeat 2 -tx "#0" -rx "#1"
+	./bin/profile-test -profile 433-gfsk-crc-9.6k -repeat 2 -tx "#0" -rx "#1"
+	./bin/profile-test -profile 433-2fsk-std-9.6k -repeat 2 -tx "#0" -rx "#1"
 	@echo ""
 	@echo "--- 868 MHz Band Tests ---"
-	./bin/profile-test -profile 868-gfsk-smart-9.6k -repeat 2
-	./bin/profile-test -profile 868-gfsk-fec-19.2k -repeat 2
+	./bin/profile-test -profile 868-gfsk-smart-9.6k -repeat 2 -tx "#0" -rx "#1"
+	./bin/profile-test -profile 868-gfsk-fec-19.2k -repeat 2 -tx "#0" -rx "#1"
 	@echo ""
 	@echo "--- 915 MHz Band Tests ---"
-	./bin/profile-test -profile 915-2fsk-sensor-9.6k -repeat 2
-	./bin/profile-test -profile 915-gfsk-std-38.4k -repeat 2
+	./bin/profile-test -profile 915-2fsk-sensor-9.6k -repeat 2 -tx "#0" -rx "#1"
+	./bin/profile-test -profile 915-gfsk-std-38.4k -repeat 2 -tx "#0" -rx "#1"
+	@echo ""
+	@echo "=========================================="
+	@echo "=== PASS 2: Device #1=TX, Device #0=RX ==="
+	@echo "=========================================="
+	@echo ""
+	@echo "--- 315 MHz Band Tests ---"
+	./bin/profile-test -profile 315-2fsk-sync-4.8k -repeat 2 -tx "#1" -rx "#0"
+	./bin/profile-test -profile 315-2fsk-sync-9.6k -repeat 2 -tx "#1" -rx "#0"
+	@echo ""
+	@echo "--- 433 MHz Band Tests ---"
+	./bin/profile-test -profile 433-2fsk-std-4.8k -repeat 2 -tx "#1" -rx "#0"
+	./bin/profile-test -profile 433-gfsk-crc-9.6k -repeat 2 -tx "#1" -rx "#0"
+	./bin/profile-test -profile 433-2fsk-std-9.6k -repeat 2 -tx "#1" -rx "#0"
+	@echo ""
+	@echo "--- 868 MHz Band Tests ---"
+	./bin/profile-test -profile 868-gfsk-smart-9.6k -repeat 2 -tx "#1" -rx "#0"
+	./bin/profile-test -profile 868-gfsk-fec-19.2k -repeat 2 -tx "#1" -rx "#0"
+	@echo ""
+	@echo "--- 915 MHz Band Tests ---"
+	./bin/profile-test -profile 915-2fsk-sensor-9.6k -repeat 2 -tx "#1" -rx "#0"
+	./bin/profile-test -profile 915-gfsk-std-38.4k -repeat 2 -tx "#1" -rx "#0"
 	@echo ""
 	@echo "--- RF Reliability Test ---"
 	./bin/test-10-repeat -c tests/etc/433-2fsk-std-4.8k.json -n 10 -delay 100ms

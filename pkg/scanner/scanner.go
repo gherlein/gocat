@@ -348,26 +348,66 @@ func (s *scanner) ClearSignalHistory() {
 func (s *scanner) coarseScan(config *ScanConfig) (*ScanResult, error) {
 	result := &ScanResult{
 		Timestamp:  time.Now(),
-		CoarseRSSI: -200.0, // Very low initial value
+		CoarseRSSI: RSSIInvalidValue, // Very low initial value
 	}
 
 	s.debug("coarseScan: starting scan of %d frequencies, threshold=%.1f dBm", len(config.CoarseFrequencies), config.RSSIThreshold)
 
-	// Load wide bandwidth preset
+	// Load wide bandwidth preset (with retry on failure)
 	if err := s.loadPreset(&s.coarsePreset); err != nil {
-		s.debug("coarseScan: failed to load preset: %v", err)
-		return nil, fmt.Errorf("failed to load coarse preset: %w", err)
+		s.debug("coarseScan: failed to load preset: %v, attempting USB recovery", err)
+		// Try to recover USB communication
+		if recErr := s.device.RecoverUSB(); recErr != nil {
+			s.debug("coarseScan: USB recovery failed: %v", recErr)
+			return nil, fmt.Errorf("failed to load coarse preset: %w", err)
+		}
+		// Retry preset load after recovery
+		if err := s.loadPreset(&s.coarsePreset); err != nil {
+			s.debug("coarseScan: preset load still failed after recovery: %v", err)
+			return nil, fmt.Errorf("failed to load coarse preset after recovery: %w", err)
+		}
+		s.debug("coarseScan: USB recovery successful, preset loaded")
 	}
 	s.debug("coarseScan: loaded coarse preset (MDMCFG4=0x%02X, MDMCFG2=0x%02X)",
 		*s.coarsePreset.MDMCFG4, *s.coarsePreset.MDMCFG2)
 
 	// Scan each frequency
 	var scanErrors int
+	var consecutiveErrors int
+	const maxConsecutiveErrors = 5
+
 	for i, freq := range config.CoarseFrequencies {
+		// Check for too many consecutive errors (possible USB communication failure)
+		if consecutiveErrors >= maxConsecutiveErrors {
+			s.debug("coarseScan: too many consecutive errors (%d), attempting USB recovery", consecutiveErrors)
+			// Attempt USB recovery
+			if recErr := s.device.RecoverUSB(); recErr != nil {
+				s.debug("coarseScan: USB recovery failed: %v, aborting scan", recErr)
+				return result, fmt.Errorf("scan aborted after %d consecutive USB errors (recovery failed)", consecutiveErrors)
+			}
+			s.debug("coarseScan: USB recovery successful, resuming scan")
+			consecutiveErrors = 0
+			// Reload preset after recovery
+			if err := s.loadPreset(&s.coarsePreset); err != nil {
+				s.debug("coarseScan: failed to reload preset after recovery: %v", err)
+				return result, fmt.Errorf("failed to reload preset after USB recovery: %w", err)
+			}
+		}
+
 		rssi, err := s.measureRSSI(freq, config.DwellTime)
 		if err != nil {
 			scanErrors++
-			s.debug("coarseScan: [%d] %.3f MHz - ERROR: %v", i, float64(freq)/1e6, err)
+			consecutiveErrors++
+			s.debug("coarseScan: [%d] %.3f MHz - ERROR: %v (consecutive: %d)", i, float64(freq)/1e6, err, consecutiveErrors)
+			continue
+		}
+
+		// Reset consecutive error counter on success
+		consecutiveErrors = 0
+
+		// Skip invalid RSSI readings
+		if !IsValidRSSI(rssi) {
+			s.debug("coarseScan: [%d] %.3f MHz = INVALID", i, float64(freq)/1e6)
 			continue
 		}
 
@@ -379,8 +419,10 @@ func (s *scanner) coarseScan(config *ScanConfig) (*ScanResult, error) {
 		}
 	}
 
-	// Check threshold
-	result.SignalDetected = result.CoarseRSSI >= config.RSSIThreshold
+	// Check threshold (only if we got valid readings)
+	if IsValidRSSI(result.CoarseRSSI) {
+		result.SignalDetected = result.CoarseRSSI >= config.RSSIThreshold
+	}
 
 	s.debug("coarseScan: complete - best=%.3f MHz @ %.1f dBm, detected=%v, errors=%d",
 		float64(result.CoarseFrequency)/1e6, result.CoarseRSSI, result.SignalDetected, scanErrors)
@@ -432,8 +474,38 @@ func (s *scanner) fineScan(config *ScanConfig, coarseResult *ScanResult) (*ScanR
 
 // measureRSSI measures the RSSI at a specific frequency
 func (s *scanner) measureRSSI(freqHz uint32, dwellTime time.Duration) (float32, error) {
-	// 1. Go to IDLE
-	if err := s.device.StrobeModeIDLE(); err != nil {
+	const maxRetries = 3
+
+	for retry := 0; retry < maxRetries; retry++ {
+		rssi, err := s.measureRSSIOnce(freqHz, dwellTime)
+		if err != nil {
+			s.debug("measureRSSI: %.3f MHz retry %d failed: %v", float64(freqHz)/1e6, retry, err)
+			// On USB error, try to recover by waiting longer
+			time.Sleep(10 * time.Millisecond)
+			// Try to reset to IDLE state to recover
+			_ = s.device.SetModeIDLE()
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+
+		// Check for invalid RSSI value (0x80)
+		if !IsValidRSSI(rssi) {
+			s.debug("measureRSSI: %.3f MHz retry %d got invalid RSSI, retrying", float64(freqHz)/1e6, retry)
+			// Longer dwell time on retry to allow AGC to settle
+			dwellTime = dwellTime * 2
+			continue
+		}
+
+		return rssi, nil
+	}
+
+	return RSSIInvalidValue, fmt.Errorf("failed to get valid RSSI after %d retries", maxRetries)
+}
+
+// measureRSSIOnce performs a single RSSI measurement at a frequency
+func (s *scanner) measureRSSIOnce(freqHz uint32, dwellTime time.Duration) (float32, error) {
+	// 1. Go to IDLE using firmware command for clean state
+	if err := s.device.SetModeIDLE(); err != nil {
 		return 0, fmt.Errorf("failed to set IDLE: %w", err)
 	}
 
@@ -447,16 +519,16 @@ func (s *scanner) measureRSSI(freqHz uint32, dwellTime time.Duration) (float32, 
 		return 0, fmt.Errorf("failed to calibrate: %w", err)
 	}
 
-	// 4. Brief wait for calibration
-	time.Sleep(500 * time.Microsecond)
+	// 4. Wait for calibration to complete
+	time.Sleep(time.Millisecond)
 
-	// 5. Enter RX mode
+	// 5. Enter RX mode using strobe (faster than firmware command)
 	if err := s.device.StrobeModeRX(); err != nil {
 		return 0, fmt.Errorf("failed to set RX: %w", err)
 	}
 
-	// 6. Wait for AGC to settle
-	time.Sleep(dwellTime)
+	// 6. Wait for AGC to settle - minimum 1ms for state transition + dwell time
+	time.Sleep(time.Millisecond + dwellTime)
 
 	// 7. Read RSSI
 	rssiRaw, err := s.device.GetRSSI()

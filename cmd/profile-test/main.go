@@ -456,15 +456,35 @@ func doProfileTest() error {
 func selectDevices(devices []*yardstick.Device, txSel, rxSel string) (*yardstick.Device, *yardstick.Device, error) {
 	var txDev, rxDev *yardstick.Device
 
-	for _, d := range devices {
-		selector := fmt.Sprintf("%d:%d", d.Bus, d.Address)
-		if txSel != "" && (d.Serial == txSel || selector == txSel) {
-			txDev = d
+	// Helper to match device by selector
+	matchDevice := func(sel string, devices []*yardstick.Device) *yardstick.Device {
+		if sel == "" {
+			return nil
 		}
-		if rxSel != "" && (d.Serial == rxSel || selector == rxSel) {
-			rxDev = d
+
+		// Check for index format "#N"
+		if len(sel) > 1 && sel[0] == '#' {
+			var idx int
+			if _, err := fmt.Sscanf(sel, "#%d", &idx); err == nil {
+				if idx >= 0 && idx < len(devices) {
+					return devices[idx]
+				}
+			}
+			return nil
 		}
+
+		// Check for bus:address or serial match
+		for _, d := range devices {
+			selector := fmt.Sprintf("%d:%d", d.Bus, d.Address)
+			if d.Serial == sel || selector == sel {
+				return d
+			}
+		}
+		return nil
 	}
+
+	txDev = matchDevice(txSel, devices)
+	rxDev = matchDevice(rxSel, devices)
 
 	// If TX not specified but RX is, use other device for TX
 	if txDev == nil && rxDev != nil {
@@ -587,13 +607,24 @@ func runLoopbackTest(txDev, rxDev *yardstick.Device, profile *profiles.Profile) 
 		return fmt.Errorf("failed to set RX mode: %w", err)
 	}
 
+	// Allow RX to settle and flush any stale data
+	time.Sleep(200 * time.Millisecond)
+
+	// Flush any stale data in RX buffer with a quick timeout read
+	_, _ = rxDev.RFRecv(50*time.Millisecond, 0)
+	// Re-enter RX mode after flush
+	if err := rxDev.SetModeRX(); err != nil {
+		return fmt.Errorf("failed to re-enter RX mode: %w", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
 	// Run multiple test iterations
 	successCount := 0
 	for i := 0; i < *repeat; i++ {
 		fmt.Printf("\nTest iteration %d/%d\n", i+1, *repeat)
 
-		// Small delay before transmit
-		time.Sleep(100 * time.Millisecond)
+		// Delay before transmit to ensure RX is ready
+		time.Sleep(150 * time.Millisecond)
 
 		// Transmit
 		fmt.Printf("  Transmitting %d bytes...\n", len(testPayload))

@@ -171,6 +171,42 @@ func (d *Device) drainReceiveBuffer() {
 	d.recvBuf = d.recvBuf[:0]
 }
 
+// RecoverUSB attempts to recover USB communication after failures
+// This drains buffers and performs a brief reset sequence
+func (d *Device) RecoverUSB() error {
+	d.recvMu.Lock()
+	defer d.recvMu.Unlock()
+
+	// Wait a bit to let any pending transfers complete/timeout
+	time.Sleep(50 * time.Millisecond)
+
+	// Drain any pending data
+	buf := make([]byte, 512)
+	for i := 0; i < 10; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		_, err := d.epIn.ReadContext(ctx, buf)
+		cancel()
+		if err != nil {
+			break
+		}
+	}
+
+	// Clear internal buffer
+	d.recvBuf = d.recvBuf[:0]
+
+	// Wait again
+	time.Sleep(50 * time.Millisecond)
+
+	// Try a simple ping to verify communication is working
+	testData := []byte{0x55, 0xAA}
+	_, err := d.Send(AppSystem, SysCmdPing, testData, 500*time.Millisecond)
+	if err != nil {
+		return fmt.Errorf("USB recovery failed: ping test failed: %w", err)
+	}
+
+	return nil
+}
+
 // setRadioIDLE puts the radio into IDLE state using direct register poke
 // This is a simplified version that doesn't wait for response, used during cleanup
 func (d *Device) setRadioIDLE() {
