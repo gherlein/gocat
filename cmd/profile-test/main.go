@@ -448,9 +448,46 @@ func doProfileTest() error {
 		}
 	}
 
+	// Warm up devices with a dummy TX/RX cycle
+	// This ensures both devices are fully initialized before the real tests
+	fmt.Println("\nWarming up devices...")
+	if err := warmupDevices(txDev, rxDev); err != nil {
+		fmt.Printf("Warning: warmup failed: %v (continuing anyway)\n", err)
+	}
+
 	// Run loopback test
 	fmt.Println("\nRunning loopback test...")
 	return runLoopbackTest(txDev, rxDev, &profileCfg.Profile)
+}
+
+// warmupDevices performs a dummy TX/RX cycle to initialize both devices
+// This helps prevent first-iteration failures by ensuring the radios are fully ready
+func warmupDevices(txDev, rxDev *yardstick.Device) error {
+	// Put RX in receive mode
+	if err := rxDev.SetModeRX(); err != nil {
+		return fmt.Errorf("RX mode failed: %w", err)
+	}
+
+	// Wait for RX to settle
+	time.Sleep(300 * time.Millisecond)
+
+	// Send a dummy packet
+	dummyPayload := []byte{0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55}
+	if err := txDev.RFXmit(dummyPayload, 0, 0); err != nil {
+		rxDev.SetModeIDLE()
+		return fmt.Errorf("TX failed: %w", err)
+	}
+
+	// Try to receive (don't care if it fails)
+	rxDev.RFRecv(500*time.Millisecond, 0)
+
+	// Return both to IDLE
+	rxDev.SetModeIDLE()
+	txDev.SetModeIDLE()
+	time.Sleep(100 * time.Millisecond)
+
+	fmt.Println("Warmup complete")
+	return nil
 }
 
 func selectDevices(devices []*yardstick.Device, txSel, rxSel string) (*yardstick.Device, *yardstick.Device, error) {
@@ -601,30 +638,20 @@ func runLoopbackTest(txDev, rxDev *yardstick.Device, profile *profiles.Profile) 
 
 	fmt.Printf("Test payload (%d bytes): %s\n", len(testPayload), hex.EncodeToString(testPayload[:min(16, len(testPayload))]))
 
-	// Put RX device in receive mode
-	fmt.Println("Setting RX device to receive mode...")
-	if err := rxDev.SetModeRX(); err != nil {
-		return fmt.Errorf("failed to set RX mode: %w", err)
-	}
-
-	// Allow RX to settle and flush any stale data
-	time.Sleep(200 * time.Millisecond)
-
-	// Flush any stale data in RX buffer with a quick timeout read
-	_, _ = rxDev.RFRecv(50*time.Millisecond, 0)
-	// Re-enter RX mode after flush
-	if err := rxDev.SetModeRX(); err != nil {
-		return fmt.Errorf("failed to re-enter RX mode: %w", err)
-	}
-	time.Sleep(100 * time.Millisecond)
-
 	// Run multiple test iterations
 	successCount := 0
 	for i := 0; i < *repeat; i++ {
 		fmt.Printf("\nTest iteration %d/%d\n", i+1, *repeat)
 
-		// Delay before transmit to ensure RX is ready
-		time.Sleep(150 * time.Millisecond)
+		// Put RX device in receive mode fresh for each iteration
+		fmt.Println("  Setting RX device to receive mode...")
+		if err := rxDev.SetModeRX(); err != nil {
+			fmt.Printf("  RX Mode Error: %v\n", err)
+			continue
+		}
+
+		// Allow RX to fully settle before transmitting
+		time.Sleep(200 * time.Millisecond)
 
 		// Transmit
 		fmt.Printf("  Transmitting %d bytes...\n", len(testPayload))
@@ -638,8 +665,9 @@ func runLoopbackTest(txDev, rxDev *yardstick.Device, profile *profiles.Profile) 
 		rxData, err := rxDev.RFRecv(*timeout, 0)
 		if err != nil {
 			fmt.Printf("  RX Error: %v\n", err)
-			// Re-enter RX mode for next iteration
-			rxDev.SetModeRX()
+			// Return to IDLE before next iteration
+			rxDev.SetModeIDLE()
+			time.Sleep(50 * time.Millisecond)
 			continue
 		}
 
@@ -660,8 +688,9 @@ func runLoopbackTest(txDev, rxDev *yardstick.Device, profile *profiles.Profile) 
 			fmt.Println("  FAIL: Payload mismatch")
 		}
 
-		// Re-enter RX mode for next iteration
-		rxDev.SetModeRX()
+		// Return to IDLE before next iteration
+		rxDev.SetModeIDLE()
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Summary

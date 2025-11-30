@@ -54,55 +54,73 @@ test-quick: build
 # Full test suite - representative profiles from each band/modulation
 # Note: Only profiles with sync word enabled are used for reliable loopback testing
 # Tests run twice with swapped device roles to ensure both devices work as TX and RX
+# All tests run regardless of failures; summary shown at end
 tests: build
 	@echo "=== Running Hardware Tests ==="
 	@echo ""
-	@echo "=========================================="
-	@echo "=== PASS 1: Device #0=TX, Device #1=RX ==="
-	@echo "=========================================="
-	@echo ""
-	@echo "--- 315 MHz Band Tests ---"
-	./bin/profile-test -profile 315-2fsk-sync-4.8k -repeat 2 -tx "#0" -rx "#1"
-	./bin/profile-test -profile 315-2fsk-sync-9.6k -repeat 2 -tx "#0" -rx "#1"
-	@echo ""
-	@echo "--- 433 MHz Band Tests ---"
-	./bin/profile-test -profile 433-2fsk-std-4.8k -repeat 2 -tx "#0" -rx "#1"
-	./bin/profile-test -profile 433-gfsk-crc-9.6k -repeat 2 -tx "#0" -rx "#1"
-	./bin/profile-test -profile 433-2fsk-std-9.6k -repeat 2 -tx "#0" -rx "#1"
-	@echo ""
-	@echo "--- 868 MHz Band Tests ---"
-	./bin/profile-test -profile 868-gfsk-smart-9.6k -repeat 2 -tx "#0" -rx "#1"
-	./bin/profile-test -profile 868-gfsk-fec-19.2k -repeat 2 -tx "#0" -rx "#1"
-	@echo ""
-	@echo "--- 915 MHz Band Tests ---"
-	./bin/profile-test -profile 915-2fsk-sensor-9.6k -repeat 2 -tx "#0" -rx "#1"
-	./bin/profile-test -profile 915-gfsk-std-38.4k -repeat 2 -tx "#0" -rx "#1"
-	@echo ""
-	@echo "=========================================="
-	@echo "=== PASS 2: Device #1=TX, Device #0=RX ==="
-	@echo "=========================================="
-	@echo ""
-	@echo "--- 315 MHz Band Tests ---"
-	./bin/profile-test -profile 315-2fsk-sync-4.8k -repeat 2 -tx "#1" -rx "#0"
-	./bin/profile-test -profile 315-2fsk-sync-9.6k -repeat 2 -tx "#1" -rx "#0"
-	@echo ""
-	@echo "--- 433 MHz Band Tests ---"
-	./bin/profile-test -profile 433-2fsk-std-4.8k -repeat 2 -tx "#1" -rx "#0"
-	./bin/profile-test -profile 433-gfsk-crc-9.6k -repeat 2 -tx "#1" -rx "#0"
-	./bin/profile-test -profile 433-2fsk-std-9.6k -repeat 2 -tx "#1" -rx "#0"
-	@echo ""
-	@echo "--- 868 MHz Band Tests ---"
-	./bin/profile-test -profile 868-gfsk-smart-9.6k -repeat 2 -tx "#1" -rx "#0"
-	./bin/profile-test -profile 868-gfsk-fec-19.2k -repeat 2 -tx "#1" -rx "#0"
-	@echo ""
-	@echo "--- 915 MHz Band Tests ---"
-	./bin/profile-test -profile 915-2fsk-sensor-9.6k -repeat 2 -tx "#1" -rx "#0"
-	./bin/profile-test -profile 915-gfsk-std-38.4k -repeat 2 -tx "#1" -rx "#0"
-	@echo ""
-	@echo "--- RF Reliability Test ---"
-	./bin/test-10-repeat -c tests/etc/433-2fsk-std-4.8k.json -n 10 -delay 100ms
-	@echo ""
-	@echo "=== All Hardware Tests Complete ==="
+	@failed=0; passed=0; \
+	run_test() { \
+		echo "Running: $$1"; \
+		if $$1; then \
+			passed=$$((passed + 1)); \
+			echo "[PASSED] $$1"; \
+		else \
+			failed=$$((failed + 1)); \
+			echo "[FAILED] $$1"; \
+		fi; \
+		echo ""; \
+	}; \
+	echo "=========================================="; \
+	echo "=== PASS 1: Device #0=TX, Device #1=RX ==="; \
+	echo "=========================================="; \
+	echo ""; \
+	echo "--- 315 MHz Band Tests ---"; \
+	run_test "./bin/profile-test -profile 315-2fsk-sync-4.8k -repeat 2 -tx '#0' -rx '#1'"; \
+	run_test "./bin/profile-test -profile 315-2fsk-sync-9.6k -repeat 2 -tx '#0' -rx '#1'"; \
+	echo "--- 433 MHz Band Tests ---"; \
+	run_test "./bin/profile-test -profile 433-2fsk-std-4.8k -repeat 2 -tx '#0' -rx '#1'"; \
+	run_test "./bin/profile-test -profile 433-gfsk-crc-9.6k -repeat 2 -tx '#0' -rx '#1'"; \
+	run_test "./bin/profile-test -profile 433-2fsk-std-9.6k -repeat 2 -tx '#0' -rx '#1'"; \
+	echo "--- 868 MHz Band Tests ---"; \
+	run_test "./bin/profile-test -profile 868-gfsk-smart-9.6k -repeat 2 -tx '#0' -rx '#1'"; \
+	run_test "./bin/profile-test -profile 868-gfsk-fec-19.2k -repeat 2 -tx '#0' -rx '#1'"; \
+	echo "--- 915 MHz Band Tests ---"; \
+	run_test "./bin/profile-test -profile 915-2fsk-sensor-9.6k -repeat 2 -tx '#0' -rx '#1'"; \
+	run_test "./bin/profile-test -profile 915-gfsk-std-38.4k -repeat 2 -tx '#0' -rx '#1'"; \
+	echo "=========================================="; \
+	echo "=== PASS 2: Device #1=TX, Device #0=RX ==="; \
+	echo "=========================================="; \
+	echo ""; \
+	echo "--- 315 MHz Band Tests ---"; \
+	run_test "./bin/profile-test -profile 315-2fsk-sync-4.8k -repeat 2 -tx '#1' -rx '#0'"; \
+	run_test "./bin/profile-test -profile 315-2fsk-sync-9.6k -repeat 2 -tx '#1' -rx '#0'"; \
+	echo "--- 433 MHz Band Tests ---"; \
+	run_test "./bin/profile-test -profile 433-2fsk-std-4.8k -repeat 2 -tx '#1' -rx '#0'"; \
+	run_test "./bin/profile-test -profile 433-gfsk-crc-9.6k -repeat 2 -tx '#1' -rx '#0'"; \
+	run_test "./bin/profile-test -profile 433-2fsk-std-9.6k -repeat 2 -tx '#1' -rx '#0'"; \
+	echo "--- 868 MHz Band Tests ---"; \
+	run_test "./bin/profile-test -profile 868-gfsk-smart-9.6k -repeat 2 -tx '#1' -rx '#0'"; \
+	run_test "./bin/profile-test -profile 868-gfsk-fec-19.2k -repeat 2 -tx '#1' -rx '#0'"; \
+	echo "--- 915 MHz Band Tests ---"; \
+	run_test "./bin/profile-test -profile 915-2fsk-sensor-9.6k -repeat 2 -tx '#1' -rx '#0'"; \
+	run_test "./bin/profile-test -profile 915-gfsk-std-38.4k -repeat 2 -tx '#1' -rx '#0'"; \
+	echo "--- RF Reliability Test ---"; \
+	run_test "./bin/test-10-repeat -c tests/etc/433-2fsk-std-4.8k.json -n 10 -delay 100ms"; \
+	echo ""; \
+	echo "=========================================="; \
+	echo "=== TEST SUMMARY ==="; \
+	echo "=========================================="; \
+	echo "Passed: $$passed"; \
+	echo "Failed: $$failed"; \
+	echo "Total:  $$((passed + failed))"; \
+	if [ $$failed -gt 0 ]; then \
+		echo ""; \
+		echo "*** $$failed TEST(S) FAILED ***"; \
+		exit 1; \
+	else \
+		echo ""; \
+		echo "=== ALL TESTS PASSED ==="; \
+	fi
 
 # Config verification test - tests register load/verify on single device
 test-configs: build
