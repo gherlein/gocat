@@ -1,0 +1,69 @@
+{
+  "name": "fast-hopper",
+  "description": "Minimal frequency list for rapid signal detection - 6 key frequencies",
+  "version": "1.0",
+  "created": "2025-01-15T00:00:00Z",
+
+  "frequencies": {
+    "coarse": [
+      310000000,
+      315000000,
+      390000000,
+      433920000,
+      868350000,
+      915000000
+    ],
+    "hopper": [],
+    "bands": []
+  },
+
+  "scan_parameters": {
+    "rssi_threshold_dbm": -90.0,
+    "fine_scan_range_hz": 500000,
+    "fine_scan_step_hz": 25000,
+    "dwell_time_ms": 2,
+    "scan_interval_ms": 5
+  },
+
+  "signal_tracking": {
+    "hold_max": 15,
+    "lost_threshold": 10,
+    "frequency_resolution_hz": 50000
+  },
+
+  "smoothing": {
+    "enabled": false,
+    "threshold_hz": 500000,
+    "k_fast": 0.9,
+    "k_slow": 0.03
+  },
+
+  "radio_presets": {
+    "coarse": {
+      "mdmcfg4": 31,
+      "mdmcfg3": 127,
+      "mdmcfg2": 48,
+      "agcctrl2": 7,
+      "agcctrl1": 0,
+      "agcctrl0": 145,
+      "frend1": 182,
+      "frend0": 16
+    },
+    "fine": {
+      "mdmcfg4": 247,
+      "mdmcfg3": 127,
+      "mdmcfg2": 48,
+      "agcctrl2": 7,
+      "agcctrl1": 0,
+      "agcctrl0": 145,
+      "frend1": 86,
+      "frend0": 16
+    }
+  },
+
+  "output": {
+    "log_signals": false,
+    "log_path": "",
+    "log_format": "json"
+  }
+}

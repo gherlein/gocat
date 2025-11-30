@@ -47,12 +47,16 @@ func main() {
 			fmt.Printf("  Product:      %s\n", device.Product)
 
 			// Try to get firmware info
-			if buildType, err := device.GetBuildType(); err == nil {
+			buildType, err := device.GetBuildType()
+			if err == nil {
 				fmt.Printf("  Firmware:     %s\n", buildType)
+			} else {
+				fmt.Printf("  Firmware:     (error: %v)\n", err)
 			}
 
 			// Try to get chip info
-			if partNum, err := device.GetPartNum(); err == nil {
+			partNum, err := device.GetPartNum()
+			if err == nil {
 				chipName := "Unknown"
 				switch partNum {
 				case yardstick.PartNumCC1110:
@@ -65,6 +69,8 @@ func main() {
 					chipName = "CC2511"
 				}
 				fmt.Printf("  Chip:         %s (0x%02X)\n", chipName, partNum)
+			} else {
+				fmt.Printf("  Chip:         (error: %v)\n", err)
 			}
 			fmt.Println()
 		} else {

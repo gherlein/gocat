@@ -212,9 +212,19 @@ func (d *Device) Send(app uint8, cmd uint8, payload []byte, timeout time.Duratio
 		copy(packet[4:], payload)
 	}
 
-	// Send the packet
-	n, err := d.epOut.Write(packet)
+	// Send the packet with timeout
+	writeCtx, writeCancel := context.WithTimeout(context.Background(), timeout)
+	n, err := d.epOut.WriteContext(writeCtx, packet)
+	writeCancel()
 	if err != nil {
+		// Check if it was a timeout/cancellation
+		if writeCtx.Err() != nil {
+			return nil, fmt.Errorf("write timeout: %w", err)
+		}
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "cancel") || strings.Contains(errStr, "timeout") {
+			return nil, fmt.Errorf("write timeout: %w", err)
+		}
 		return nil, fmt.Errorf("failed to write to EP5: %w", err)
 	}
 	if n != len(packet) {
@@ -269,11 +279,16 @@ func (d *Device) Recv(expectedApp uint8, expectedCmd uint8, timeout time.Duratio
 
 		if err != nil {
 			// Check if it's a timeout/canceled error (normal, just retry)
+			if ctx.Err() != nil {
+				// Context was canceled or timed out, this is expected
+				continue
+			}
 			errStr := strings.ToLower(err.Error())
 			if strings.Contains(errStr, "timeout") ||
 				strings.Contains(errStr, "timed out") ||
 				strings.Contains(errStr, "canceled") ||
-				strings.Contains(errStr, "context") {
+				strings.Contains(errStr, "context") ||
+				strings.Contains(errStr, "libusb") {
 				continue
 			}
 			return nil, fmt.Errorf("failed to read from EP5: %w", err)

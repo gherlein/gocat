@@ -1,0 +1,79 @@
+{
+  "name": "433-only",
+  "description": "433 MHz band focused scan - LPD433 and ISM 433.92 MHz",
+  "version": "1.0",
+  "created": "2025-01-15T00:00:00Z",
+
+  "frequencies": {
+    "coarse": [
+      433000000,
+      433075000,
+      433250000,
+      433420000,
+      433500000,
+      433750000,
+      433920000,
+      434000000,
+      434250000,
+      434420000,
+      434500000,
+      434775000
+    ],
+    "hopper": [
+      433420000,
+      433920000,
+      434420000
+    ],
+    "bands": []
+  },
+
+  "scan_parameters": {
+    "rssi_threshold_dbm": -90.0,
+    "fine_scan_range_hz": 150000,
+    "fine_scan_step_hz": 10000,
+    "dwell_time_ms": 2,
+    "scan_interval_ms": 10
+  },
+
+  "signal_tracking": {
+    "hold_max": 20,
+    "lost_threshold": 15,
+    "frequency_resolution_hz": 10000
+  },
+
+  "smoothing": {
+    "enabled": true,
+    "threshold_hz": 100000,
+    "k_fast": 0.9,
+    "k_slow": 0.05
+  },
+
+  "radio_presets": {
+    "coarse": {
+      "mdmcfg4": 31,
+      "mdmcfg3": 127,
+      "mdmcfg2": 48,
+      "agcctrl2": 7,
+      "agcctrl1": 0,
+      "agcctrl0": 145,
+      "frend1": 182,
+      "frend0": 16
+    },
+    "fine": {
+      "mdmcfg4": 247,
+      "mdmcfg3": 127,
+      "mdmcfg2": 48,
+      "agcctrl2": 7,
+      "agcctrl1": 0,
+      "agcctrl0": 145,
+      "frend1": 86,
+      "frend0": 16
+    }
+  },
+
+  "output": {
+    "log_signals": false,
+    "log_path": "",
+    "log_format": "json"
+  }
+}

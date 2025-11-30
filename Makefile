@@ -2,7 +2,7 @@
 
 all: build
 
-build: bin/ys1-dump-config bin/ys1-load-config bin/test-configs bin/lsys1 bin/send-recv bin/test-10-repeat bin/profile-test
+build: bin/ys1-dump-config bin/ys1-load-config bin/test-configs bin/lsys1 bin/send-recv bin/test-10-repeat bin/profile-test bin/rf-scanner
 
 bin/ys1-dump-config: cmd/ys1-dump-config/main.go pkg/**/*.go
 	go build -o bin/ys1-dump-config ./cmd/ys1-dump-config
@@ -24,6 +24,9 @@ bin/test-10-repeat: cmd/test-10-repeat/main.go pkg/**/*.go
 
 bin/profile-test: cmd/profile-test/main.go pkg/**/*.go
 	go build -o bin/profile-test ./cmd/profile-test
+
+bin/rf-scanner: cmd/rf-scanner/main.go pkg/**/*.go
+	go build -o bin/rf-scanner ./cmd/rf-scanner
 
 clean:
 	rm -rf bin/

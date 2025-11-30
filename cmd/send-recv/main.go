@@ -45,6 +45,8 @@ func main() {
 	hexStr := flag.String("hex", "", "Data to send (hex encoded)")
 	repeat := flag.Uint("repeat", 0, "Number of times to repeat transmission (0 = once)")
 	offset := flag.Uint("offset", 0, "Offset for repeat transmissions")
+	numSends := flag.Int("n", 1, "Number of send iterations (0 = infinite)")
+	delayMs := flag.Int("delay", 0, "Delay in milliseconds between send iterations")
 
 	// Receive mode options
 	timeout := flag.Duration("timeout", 1*time.Second, "Receive timeout per packet")
@@ -162,13 +164,13 @@ func main() {
 	// Run appropriate mode
 	switch *mode {
 	case "send":
-		runSendMode(device, *dataStr, *hexStr, uint16(*repeat), uint16(*offset), *verbose)
+		runSendMode(device, *dataStr, *hexStr, uint16(*repeat), uint16(*offset), *numSends, *delayMs, *verbose)
 	case "recv":
 		runRecvMode(device, *timeout, *count, *verbose, *rawOutput)
 	}
 }
 
-func runSendMode(device *yardstick.Device, dataStr, hexStr string, repeat, offset uint16, verbose bool) {
+func runSendMode(device *yardstick.Device, dataStr, hexStr string, repeat, offset uint16, numSends, delayMs int, verbose bool) {
 	// Determine data to send
 	var data []byte
 
@@ -194,20 +196,60 @@ func runSendMode(device *yardstick.Device, dataStr, hexStr string, repeat, offse
 	if verbose {
 		fmt.Printf("Transmitting %d bytes", len(data))
 		if repeat > 0 {
-			fmt.Printf(" (repeat %d times, offset %d)", repeat, offset)
+			fmt.Printf(" (hw repeat %d times, offset %d)", repeat, offset)
+		}
+		if numSends != 1 {
+			if numSends == 0 {
+				fmt.Printf(" (infinite iterations")
+			} else {
+				fmt.Printf(" (%d iterations", numSends)
+			}
+			if delayMs > 0 {
+				fmt.Printf(", %dms delay", delayMs)
+			}
+			fmt.Printf(")")
 		}
 		fmt.Println()
 		fmt.Printf("Data (hex): %s\n", hex.EncodeToString(data))
 	}
 
-	// Transmit data
-	err := device.RFXmit(data, repeat, offset)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: Transmit failed: %v\n", err)
-		os.Exit(1)
+	// Set up signal handler for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	delay := time.Duration(delayMs) * time.Millisecond
+	iteration := 0
+	infinite := numSends == 0
+
+	for infinite || iteration < numSends {
+		// Check for shutdown signal (non-blocking)
+		select {
+		case <-sigChan:
+			fmt.Printf("\nStopped after %d transmissions\n", iteration)
+			return
+		default:
+		}
+
+		// Transmit data
+		err := device.RFXmit(data, repeat, offset)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Transmit failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		iteration++
+
+		if verbose && (iteration%100 == 0 || numSends <= 10) {
+			fmt.Printf("Transmitted iteration %d\n", iteration)
+		}
+
+		// Delay between iterations (if not the last one)
+		if delay > 0 && (infinite || iteration < numSends) {
+			time.Sleep(delay)
+		}
 	}
 
-	fmt.Println("Transmission complete")
+	fmt.Printf("Transmission complete (%d iterations)\n", iteration)
 }
 
 func runRecvMode(device *yardstick.Device, timeout time.Duration, count int, verbose, rawOutput bool) {

@@ -1,0 +1,109 @@
+{
+  "name": "default-scanner",
+  "description": "Default frequency scanner configuration - full spectrum scan across all supported bands",
+  "version": "1.0",
+  "created": "2025-01-15T00:00:00Z",
+
+  "frequencies": {
+    "coarse": [
+      300000000,
+      303875000,
+      304250000,
+      310000000,
+      315000000,
+      318000000,
+      390000000,
+      418000000,
+      433075000,
+      433420000,
+      433920000,
+      434420000,
+      434775000,
+      438900000,
+      868350000,
+      915000000,
+      925000000
+    ],
+    "hopper": [
+      310000000,
+      315000000,
+      390000000,
+      433920000,
+      868350000,
+      915000000
+    ],
+    "bands": [
+      {
+        "name": "300MHz",
+        "start_hz": 300000000,
+        "end_hz": 348000000,
+        "step_hz": 500000,
+        "enabled": false
+      },
+      {
+        "name": "400MHz",
+        "start_hz": 387000000,
+        "end_hz": 464000000,
+        "step_hz": 500000,
+        "enabled": false
+      },
+      {
+        "name": "800MHz",
+        "start_hz": 779000000,
+        "end_hz": 928000000,
+        "step_hz": 1000000,
+        "enabled": false
+      }
+    ]
+  },
+
+  "scan_parameters": {
+    "rssi_threshold_dbm": -93.0,
+    "fine_scan_range_hz": 300000,
+    "fine_scan_step_hz": 20000,
+    "dwell_time_ms": 2,
+    "scan_interval_ms": 10
+  },
+
+  "signal_tracking": {
+    "hold_max": 20,
+    "lost_threshold": 15,
+    "frequency_resolution_hz": 10000
+  },
+
+  "smoothing": {
+    "enabled": true,
+    "threshold_hz": 500000,
+    "k_fast": 0.9,
+    "k_slow": 0.03
+  },
+
+  "radio_presets": {
+    "coarse": {
+      "mdmcfg4": 31,
+      "mdmcfg3": 127,
+      "mdmcfg2": 48,
+      "agcctrl2": 7,
+      "agcctrl1": 0,
+      "agcctrl0": 145,
+      "frend1": 182,
+      "frend0": 16
+    },
+    "fine": {
+      "mdmcfg4": 247,
+      "mdmcfg3": 127,
+      "mdmcfg2": 48,
+      "agcctrl2": 7,
+      "agcctrl1": 0,
+      "agcctrl0": 145,
+      "frend1": 86,
+      "frend0": 16
+    }
+  },
+
+  "output": {
+    "log_signals": false,
+    "log_path": "",
+    "log_format": "json"
+  }
+}

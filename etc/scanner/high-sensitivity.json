@@ -1,0 +1,80 @@
+{
+  "name": "high-sensitivity",
+  "description": "High sensitivity scan with lower threshold and longer dwell time - for weak signals",
+  "version": "1.0",
+  "created": "2025-01-15T00:00:00Z",
+
+  "frequencies": {
+    "coarse": [
+      300000000,
+      303875000,
+      304250000,
+      310000000,
+      315000000,
+      318000000,
+      390000000,
+      418000000,
+      433075000,
+      433420000,
+      433920000,
+      434420000,
+      434775000,
+      438900000,
+      868350000,
+      915000000,
+      925000000
+    ],
+    "hopper": [],
+    "bands": []
+  },
+
+  "scan_parameters": {
+    "rssi_threshold_dbm": -100.0,
+    "fine_scan_range_hz": 400000,
+    "fine_scan_step_hz": 15000,
+    "dwell_time_ms": 5,
+    "scan_interval_ms": 15
+  },
+
+  "signal_tracking": {
+    "hold_max": 30,
+    "lost_threshold": 25,
+    "frequency_resolution_hz": 10000
+  },
+
+  "smoothing": {
+    "enabled": true,
+    "threshold_hz": 300000,
+    "k_fast": 0.8,
+    "k_slow": 0.02
+  },
+
+  "radio_presets": {
+    "coarse": {
+      "mdmcfg4": 31,
+      "mdmcfg3": 127,
+      "mdmcfg2": 48,
+      "agcctrl2": 7,
+      "agcctrl1": 0,
+      "agcctrl0": 145,
+      "frend1": 182,
+      "frend0": 16
+    },
+    "fine": {
+      "mdmcfg4": 247,
+      "mdmcfg3": 127,
+      "mdmcfg2": 48,
+      "agcctrl2": 7,
+      "agcctrl1": 0,
+      "agcctrl0": 145,
+      "frend1": 86,
+      "frend0": 16
+    }
+  },
+
+  "output": {
+    "log_signals": true,
+    "log_path": "signals.log",
+    "log_format": "json"
+  }
+}
