@@ -389,6 +389,107 @@ func (d *Device) parseResponse(expectedApp uint8, expectedCmd uint8) ([]byte, []
 	return payload, remaining, nil
 }
 
+// RecvFromApp receives data from a specific application and queue
+// This is used for spectrum analyzer data which comes from APP_SPECAN
+func (d *Device) RecvFromApp(app uint8, queue uint8, timeout time.Duration) ([]byte, error) {
+	d.recvMu.Lock()
+	defer d.recvMu.Unlock()
+
+	if timeout == 0 {
+		timeout = USBDefaultTimeout
+	}
+
+	deadline := time.Now().Add(timeout)
+	buf := make([]byte, 512)
+
+	for {
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timeout waiting for app 0x%02X data", app)
+		}
+
+		// Check if we already have a matching response buffered
+		response, remaining, err := d.parseResponseFromApp(app, queue)
+		if err == nil {
+			d.recvBuf = remaining
+			return response, nil
+		}
+
+		// Calculate remaining time
+		remainingTime := time.Until(deadline)
+		if remainingTime <= 0 {
+			return nil, fmt.Errorf("timeout waiting for app 0x%02X data", app)
+		}
+
+		readTimeout := 100 * time.Millisecond
+		if remainingTime < readTimeout {
+			readTimeout = remainingTime
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+		n, err := d.epIn.ReadContext(ctx, buf)
+		cancel()
+
+		if err != nil {
+			if ctx.Err() != nil {
+				continue
+			}
+			errStr := strings.ToLower(err.Error())
+			if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "canceled") {
+				continue
+			}
+			return nil, fmt.Errorf("failed to read from EP5: %w", err)
+		}
+
+		if n > 0 {
+			d.recvBuf = append(d.recvBuf, buf[:n]...)
+		}
+	}
+}
+
+// parseResponseFromApp parses a response for a specific app/queue
+func (d *Device) parseResponseFromApp(app uint8, queue uint8) ([]byte, []byte, error) {
+	// Find the response marker '@'
+	markerIdx := -1
+	for i, b := range d.recvBuf {
+		if b == ResponseMarker {
+			markerIdx = i
+			break
+		}
+	}
+
+	if markerIdx == -1 {
+		return nil, d.recvBuf, fmt.Errorf("no response marker found")
+	}
+
+	data := d.recvBuf[markerIdx:]
+
+	// Need at least 5 bytes for header: marker + app + cmd + length(2)
+	if len(data) < 5 {
+		return nil, d.recvBuf, fmt.Errorf("incomplete header")
+	}
+
+	respApp := data[1]
+	respQueue := data[2]
+	length := binary.LittleEndian.Uint16(data[3:5])
+
+	totalLen := 5 + int(length)
+	if len(data) < totalLen {
+		return nil, d.recvBuf, fmt.Errorf("incomplete payload")
+	}
+
+	// Check if this matches what we're looking for
+	if respApp != app || respQueue != queue {
+		// Skip this response and look for another
+		return nil, d.recvBuf[markerIdx+1:], fmt.Errorf("app/queue mismatch")
+	}
+
+	payload := make([]byte, length)
+	copy(payload, data[5:totalLen])
+
+	remaining := data[totalLen:]
+	return payload, remaining, nil
+}
+
 // Ping sends a ping command and verifies the response
 func (d *Device) Ping(data []byte) error {
 	response, err := d.Send(AppSystem, SysCmdPing, data, USBDefaultTimeout)

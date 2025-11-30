@@ -15,6 +15,18 @@ const RegMCSM1 = 0xDF13
 // MARCSTATE register address for radio state
 const RegMARCSTATE = 0xDF3B
 
+// Frequency registers
+const (
+	RegFREQ2   = 0xDF09 // Frequency control word, high byte
+	RegFREQ1   = 0xDF0A // Frequency control word, middle byte
+	RegFREQ0   = 0xDF0B // Frequency control word, low byte
+	RegMDMCFG1 = 0xDF10 // Modem configuration (contains CHANSPC_E)
+	RegMDMCFG0 = 0xDF11 // Modem configuration (CHANSPC_M)
+)
+
+// Crystal frequency for YardStick One (CC1111)
+const CrystalFreqHz = 24000000
+
 // MARCSTATE values
 const (
 	MarcStateIdle = 0x01
@@ -409,4 +421,123 @@ func (d *Device) GetRadioStatus() (*RadioStatus, error) {
 		MARCSTATE: marcstate,
 		PKTSTATUS: pktstatus,
 	}, nil
+}
+
+// SetFrequency sets the radio frequency in Hz
+// Uses the CC1111's 24 MHz crystal reference
+func (d *Device) SetFrequency(freqHz uint32) error {
+	// Calculate FREQ registers for 24 MHz crystal
+	// FREQ = (freq_hz * 65536) / 24000000
+	freq := uint32((uint64(freqHz) * 65536) / CrystalFreqHz)
+
+	freq2 := uint8((freq >> 16) & 0xFF)
+	freq1 := uint8((freq >> 8) & 0xFF)
+	freq0 := uint8(freq & 0xFF)
+
+	// Write FREQ2, FREQ1, FREQ0 registers
+	if err := d.PokeByte(RegFREQ2, freq2); err != nil {
+		return fmt.Errorf("failed to set FREQ2: %w", err)
+	}
+	if err := d.PokeByte(RegFREQ1, freq1); err != nil {
+		return fmt.Errorf("failed to set FREQ1: %w", err)
+	}
+	if err := d.PokeByte(RegFREQ0, freq0); err != nil {
+		return fmt.Errorf("failed to set FREQ0: %w", err)
+	}
+
+	return nil
+}
+
+// GetFrequency returns the current radio frequency in Hz
+func (d *Device) GetFrequency() (uint32, error) {
+	freq2, err := d.PeekByte(RegFREQ2)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read FREQ2: %w", err)
+	}
+	freq1, err := d.PeekByte(RegFREQ1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read FREQ1: %w", err)
+	}
+	freq0, err := d.PeekByte(RegFREQ0)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read FREQ0: %w", err)
+	}
+
+	freq := uint32(freq2)<<16 | uint32(freq1)<<8 | uint32(freq0)
+	// Convert back to Hz: freq_hz = (FREQ * 24000000) / 65536
+	freqHz := (uint64(freq) * CrystalFreqHz) / 65536
+	return uint32(freqHz), nil
+}
+
+// SetChannelSpacing sets the channel spacing for spectrum analysis
+// Uses MDMCFG0 and MDMCFG1 registers
+// spacing = (Fxtal / 2^18) * (256 + CHANSPC_M) * 2^CHANSPC_E
+// For 24 MHz crystal: spacing = 91.552734 * (256 + M) * 2^E
+func (d *Device) SetChannelSpacing(spacingHz uint32) error {
+	// Find E and M that give closest match
+	fxtal := float64(CrystalFreqHz)
+	target := float64(spacingHz)
+
+	var bestE, bestM uint8
+	var bestError float64 = 1e12
+
+	for e := uint8(0); e < 4; e++ {
+		// m = (spacing * 2^18) / (fxtal * 2^e) - 256
+		divisor := fxtal * float64(uint32(1)<<e)
+		m := (target * float64(uint32(1)<<18)) / divisor - 256
+
+		if m >= 0 && m <= 255 {
+			mRounded := uint8(m + 0.5) // Round to nearest
+			actual := (fxtal / float64(uint32(1)<<18)) * (256 + float64(mRounded)) * float64(uint32(1)<<e)
+			err := actual - target
+			if err < 0 {
+				err = -err
+			}
+			if err < bestError {
+				bestError = err
+				bestE = e
+				bestM = mRounded
+			}
+		}
+	}
+
+	// Read current MDMCFG1 to preserve other bits
+	mdmcfg1, err := d.PeekByte(RegMDMCFG1)
+	if err != nil {
+		return fmt.Errorf("failed to read MDMCFG1: %w", err)
+	}
+
+	// MDMCFG1[1:0] = CHANSPC_E, preserve bits 7:2
+	mdmcfg1 = (mdmcfg1 & 0xFC) | (bestE & 0x03)
+
+	if err := d.PokeByte(RegMDMCFG1, mdmcfg1); err != nil {
+		return fmt.Errorf("failed to set MDMCFG1: %w", err)
+	}
+
+	// MDMCFG0 = CHANSPC_M
+	if err := d.PokeByte(RegMDMCFG0, bestM); err != nil {
+		return fmt.Errorf("failed to set MDMCFG0: %w", err)
+	}
+
+	return nil
+}
+
+// GetChannelSpacing returns the current channel spacing in Hz
+func (d *Device) GetChannelSpacing() (uint32, error) {
+	mdmcfg1, err := d.PeekByte(RegMDMCFG1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read MDMCFG1: %w", err)
+	}
+	mdmcfg0, err := d.PeekByte(RegMDMCFG0)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read MDMCFG0: %w", err)
+	}
+
+	chanspcE := mdmcfg1 & 0x03
+	chanspcM := mdmcfg0
+
+	// spacing = (24e6 / 2^18) * (256 + M) * 2^E
+	fxtal := float64(CrystalFreqHz)
+	spacing := (fxtal / float64(uint32(1)<<18)) * (256 + float64(chanspcM)) * float64(uint32(1)<<chanspcE)
+	return uint32(spacing), nil
 }

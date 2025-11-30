@@ -79,6 +79,17 @@ const (
 	NICLongXmitMore = 0x0D // Continue long transmission
 )
 
+// Spectrum Analyzer Commands (sent via APP_NIC)
+const (
+	SPECANStart = 0x40 // RFCAT_START_SPECAN - start spectrum analysis
+	SPECANStop  = 0x41 // RFCAT_STOP_SPECAN - stop spectrum analysis
+)
+
+// Spectrum Analyzer Queue (for APP_SPECAN responses)
+const (
+	SPECANQueue = 0x01 // Queue ID for receiving spectrum data
+)
+
 // EP0 Vendor Commands (control transfers)
 const (
 	EP0CmdGetDebugCodes = 0x00 // Get debug/error codes
