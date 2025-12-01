@@ -152,13 +152,84 @@ const (
 
 // Last Code Error values (LCE_*)
 const (
-	LCENoError                      = 0x00
-	LCEUSBEP5TXWhileInbufWritten    = 0x01
-	LCEUSBEP0SentStall              = 0x04
-	LCEUSBEP5OutWhileOutbufWritten  = 0x05
-	LCEUSBEP5LenTooBig              = 0x06
-	LCEUSBEP5GotCrap                = 0x07
-	LCEUSBEP5Stall                  = 0x08
-	LCERFRXOverflow                 = 0x10
-	LCERFTXUnderflow                = 0x11
+	LCENoError                     = 0x00
+	LCEUSBEP5TXWhileInbufWritten   = 0x01
+	LCEUSBEP0SentStall             = 0x04
+	LCEUSBEP5OutWhileOutbufWritten = 0x05
+	LCEUSBEP5LenTooBig             = 0x06
+	LCEUSBEP5GotCrap               = 0x07
+	LCEUSBEP5Stall                 = 0x08
+	LCERFRXOverflow                = 0x10
+	LCERFTXUnderflow               = 0x11
+)
+
+// FHSS Commands (APP_NIC = 0x42)
+const (
+	FHSSSetChannels     = 0x10 // Set channel hop sequence
+	FHSSNextChannel     = 0x11 // Hop to next channel
+	FHSSChangeChannel   = 0x12 // Change to specific channel
+	FHSSSetMACThreshold = 0x13 // Set MAC timing threshold
+	FHSSGetMACThreshold = 0x14 // Get MAC timing threshold
+	FHSSSetMACData      = 0x15 // Set raw MAC data
+	FHSSGetMACData      = 0x16 // Get raw MAC data
+	FHSSXmit            = 0x17 // Transmit during FHSS
+	FHSSGetChannels     = 0x18 // Get channel hop sequence
+	FHSSSetState        = 0x20 // Set MAC state
+	FHSSGetState        = 0x21 // Get MAC state
+	FHSSStartSync       = 0x22 // Start network synchronization
+	FHSSStartHopping    = 0x23 // Begin automatic hopping
+	FHSSStopHopping     = 0x24 // Stop automatic hopping
+	FHSSSetMACPeriod    = 0x25 // Set MAC period/dwell time
+)
+
+// FHSS MAC States
+const (
+	MACStateNonHopping    = 0x00 // Standard non-hopping mode
+	MACStateDiscovery     = 0x01 // Network discovery mode
+	MACStateSynching      = 0x02 // Synchronizing to master
+	MACStateSynched       = 0x03 // Synchronized and hopping
+	MACStateSyncMaster    = 0x04 // Operating as sync master
+	MACStateSyncingMaster = 0x05 // Actively beaconing as master
+	MACStateLongXmit      = 0x06 // Long transmit mode
+	MACStateLongXmitFail  = 0x07 // Long transmit failed
+	MACStatePrepSpecan    = 0x40 // Preparing spectrum analyzer
+	MACStateSpecan        = 0x41 // Spectrum analyzer active
+)
+
+// FHSS Limits
+const (
+	FHSSMaxChannels = 880 // Maximum channels in hop sequence
+	FHSSMaxTXMsgs   = 2   // Number of TX message buffers
+	FHSSMaxTXMsgLen = 240 // Maximum message length per buffer
+)
+
+// AES Crypto Modes (matches CC1111 ENCCS register)
+const (
+	AESModeECB    = 0x00 // Electronic Codebook
+	AESModeCBC    = 0x10 // Cipher Block Chaining
+	AESModeCFB    = 0x20 // Cipher Feedback
+	AESModeOFB    = 0x30 // Output Feedback
+	AESModeCTR    = 0x40 // Counter
+	AESModeCBCMAC = 0x50 // CBC Message Authentication Code
+)
+
+// AES Crypto Flags
+const (
+	AESCryptoNone       = 0x00
+	AESCryptoOutEnable  = 0x08 // Enable outbound (TX) crypto
+	AESCryptoOutEncrypt = 0x04 // Encrypt outbound (else decrypt)
+	AESCryptoInEnable   = 0x02 // Enable inbound (RX) crypto
+	AESCryptoInEncrypt  = 0x01 // Encrypt inbound (else decrypt)
+)
+
+// Common AES configurations
+const (
+	// AESCryptoDefault: Encrypt TX, Decrypt RX with CBC
+	AESCryptoDefault = AESModeCBC | AESCryptoOutEnable | AESCryptoOutEncrypt | AESCryptoInEnable
+)
+
+// Amplifier Mode values
+const (
+	AmpModeOff = 0x00 // Amplifier disabled
+	AmpModeOn  = 0x01 // Amplifier enabled
 )

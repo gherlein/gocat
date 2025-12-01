@@ -1,8 +1,8 @@
-.PHONY: all build clean test tests test-quick test-configs fmt install
+.PHONY: all build clean test tests test-quick test-configs fmt install rpi
 
 all: build
 
-build: bin/ys1-dump-config bin/ys1-load-config bin/test-configs bin/lsys1 bin/send-recv bin/test-10-repeat bin/profile-test bin/rf-scanner
+build: bin/ys1-dump-config bin/ys1-load-config bin/test-configs bin/lsys1 bin/send-recv bin/test-10-repeat bin/profile-test bin/rf-scanner bin/plot-spectrum bin/fhss-demo
 
 bin/ys1-dump-config: cmd/ys1-dump-config/main.go pkg/**/*.go
 	go build -o bin/ys1-dump-config ./cmd/ys1-dump-config
@@ -28,6 +28,12 @@ bin/profile-test: cmd/profile-test/main.go pkg/**/*.go
 bin/rf-scanner: cmd/rf-scanner/main.go pkg/**/*.go
 	go build -o bin/rf-scanner ./cmd/rf-scanner
 
+bin/plot-spectrum: cmd/plot-spectrum/main.go
+	go build -o bin/plot-spectrum ./cmd/plot-spectrum
+
+bin/fhss-demo: cmd/fhss-demo/main.go pkg/**/*.go
+	go build -o bin/fhss-demo ./cmd/fhss-demo
+
 clean:
 	rm -rf bin/
 	go clean
@@ -41,6 +47,67 @@ fmt:
 install: build
 	install -m 755 bin/ys1-dump-config /usr/local/bin/
 	install -m 755 bin/ys1-load-config /usr/local/bin/
+
+# Cross-compile for Raspberry Pi 5 (ARM64)
+# RPi 5 uses Cortex-A76 (ARMv8.2-A), 64-bit
+# Requires: apt install gcc-aarch64-linux-gnu libusb-1.0-0-dev:arm64
+# Or use crossbuild-essential-arm64 package
+#
+# If you don't have the cross-compiler, you can build on the Pi itself:
+#   1. Copy source to Pi: rsync -av --exclude bin . pi@hostname:~/gocat/
+#   2. On Pi: cd ~/gocat && make build
+RPI_CC ?= aarch64-linux-gnu-gcc
+RPI_CGO_CFLAGS ?= -I/usr/aarch64-linux-gnu/include
+RPI_CGO_LDFLAGS ?= -L/usr/aarch64-linux-gnu/lib
+
+rpi:
+	@mkdir -p bin/rpi
+	@echo "Cross-compiling for Raspberry Pi 5 (linux/arm64)..."
+	@echo "Using CC=$(RPI_CC)"
+	@if ! command -v $(RPI_CC) >/dev/null 2>&1; then \
+		echo ""; \
+		echo "ERROR: Cross-compiler not found: $(RPI_CC)"; \
+		echo ""; \
+		echo "Install with:"; \
+		echo "  sudo apt install gcc-aarch64-linux-gnu"; \
+		echo "  sudo apt install libusb-1.0-0-dev"; \
+		echo ""; \
+		echo "For cross-compiled libusb, you may need:"; \
+		echo "  sudo dpkg --add-architecture arm64"; \
+		echo "  sudo apt update"; \
+		echo "  sudo apt install libusb-1.0-0-dev:arm64"; \
+		echo ""; \
+		echo "Alternative: Build directly on the Pi:"; \
+		echo "  rsync -av --exclude bin . pi@hostname:~/gocat/"; \
+		echo "  ssh pi@hostname 'cd ~/gocat && make build'"; \
+		exit 1; \
+	fi
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/ys1-dump-config ./cmd/ys1-dump-config
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/ys1-load-config ./cmd/ys1-load-config
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/test-configs ./cmd/test-configs
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/lsys1 ./cmd/lsys1
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/send-recv ./cmd/send-recv
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/test-10-repeat ./cmd/test-10-repeat
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/profile-test ./cmd/profile-test
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/rf-scanner ./cmd/rf-scanner
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/plot-spectrum ./cmd/plot-spectrum
+	CGO_ENABLED=1 CC=$(RPI_CC) CGO_CFLAGS="$(RPI_CGO_CFLAGS)" CGO_LDFLAGS="$(RPI_CGO_LDFLAGS)" \
+		GOOS=linux GOARCH=arm64 go build -o bin/rpi/fhss-demo ./cmd/fhss-demo
+	@echo ""
+	@echo "Done. Binaries in bin/rpi/"
+	@echo "Copy to Pi with: scp bin/rpi/* pi@<hostname>:~/"
+	@echo ""
+	@echo "On the Pi, ensure libusb is installed:"
+	@echo "  sudo apt install libusb-1.0-0"
 
 # Hardware tests - requires YardStick One devices connected
 # Tests representative profiles across bands and modulation types
